@@ -1,0 +1,30 @@
+{
+  "dataset_name": "msmarco-passage",
+  "document_count": 5000,
+  "preprocessing": {
+    "use_stemming": false,
+    "use_lemmatization": true,
+    "remove_stopwords": true,
+    "spacy_available": false,
+    "lemmatization_mode": "traditional_fallback"
+  },
+  "embedding_model": "all-MiniLM-L6-v2",
+  "index_scale_mode": "dev",
+  "max_docs_cap": 5000,
+  "timestamp": "2026-06-18T01:41:49.785642+00:00",
+  "git_commit": null,
+  "artifact_files": [
+    "vsm_index.json",
+    "bm25_index.json",
+    "embeddings_index.json",
+    "metadata.json",
+    "doc_term_counts.json",
+    "index_manifest.json"
+  ],
+  "sanity_checks": {
+    "indexed_docs_count": 5000,
+    "empty_token_docs_count": 0,
+    "missing_embeddings_count": 0,
+    "unique_terms_count": 19924
+  }
+}

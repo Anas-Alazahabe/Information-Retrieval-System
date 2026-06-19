@@ -1,0 +1,43 @@
+{
+  "dataset_name": "local_fixture",
+  "index_dir": "C:\\Users\\Golden\\Documents\\ir_core_project\\index_data",
+  "timestamp": "2026-06-16T11:22:24.944285+00:00",
+  "top_k": 10,
+  "modes": {
+    "vsm": {
+      "map": 1.0,
+      "recall": 1.0,
+      "precision_at_10": 0.166667,
+      "ndcg_at_10": 1.0,
+      "num_queries": 3
+    },
+    "bm25": {
+      "map": 1.0,
+      "recall": 1.0,
+      "precision_at_10": 0.166667,
+      "ndcg_at_10": 1.0,
+      "num_queries": 3
+    },
+    "embedding": {
+      "map": 0.0,
+      "recall": 0.0,
+      "precision_at_10": 0.0,
+      "ndcg_at_10": 0.0,
+      "num_queries": 3
+    },
+    "hybrid_parallel": {
+      "map": 1.0,
+      "recall": 1.0,
+      "precision_at_10": 0.166667,
+      "ndcg_at_10": 1.0,
+      "num_queries": 3
+    },
+    "hybrid_serial": {
+      "map": 1.0,
+      "recall": 1.0,
+      "precision_at_10": 0.166667,
+      "ndcg_at_10": 1.0,
+      "num_queries": 3
+    }
+  }
+}

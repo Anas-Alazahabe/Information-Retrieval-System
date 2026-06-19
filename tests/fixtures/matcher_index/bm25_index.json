@@ -1,0 +1,14 @@
+{
+  "hospital": {
+    "doc1": {"tf": 2, "doc_len": 4},
+    "doc2": {"tf": 1, "doc_len": 3}
+  },
+  "system": {
+    "doc1": {"tf": 1, "doc_len": 4},
+    "doc3": {"tf": 2, "doc_len": 3}
+  },
+  "security": {
+    "doc2": {"tf": 2, "doc_len": 3},
+    "doc3": {"tf": 1, "doc_len": 3}
+  }
+}

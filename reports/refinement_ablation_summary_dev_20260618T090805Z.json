@@ -1,0 +1,118 @@
+{
+  "scale": "dev",
+  "timestamp": "2026-06-18T09:08:16.492908+00:00",
+  "dataset_name": "msmarco-passage/dev",
+  "max_queries": 5,
+  "top_k": 10,
+  "runs": {
+    "baseline": {
+      "use_refinement": false,
+      "refinement_techniques": [],
+      "modes": {
+        "bm25": {
+          "map": 0.0,
+          "recall": 0.0,
+          "precision_at_10": 0.0,
+          "ndcg_at_10": 0.0,
+          "num_queries": 3
+        }
+      }
+    },
+    "query_preprocess": {
+      "use_refinement": true,
+      "refinement_techniques": [
+        "query_preprocess"
+      ],
+      "modes": {
+        "bm25": {
+          "map": 0.0,
+          "recall": 0.0,
+          "precision_at_10": 0.0,
+          "ndcg_at_10": 0.0,
+          "num_queries": 3
+        }
+      }
+    },
+    "synonyms": {
+      "use_refinement": true,
+      "refinement_techniques": [
+        "synonyms"
+      ],
+      "modes": {
+        "bm25": {
+          "map": 0.0,
+          "recall": 0.0,
+          "precision_at_10": 0.0,
+          "ndcg_at_10": 0.0,
+          "num_queries": 3
+        }
+      }
+    },
+    "prf": {
+      "use_refinement": true,
+      "refinement_techniques": [
+        "prf"
+      ],
+      "modes": {
+        "bm25": {
+          "map": 0.0,
+          "recall": 0.0,
+          "precision_at_10": 0.0,
+          "ndcg_at_10": 0.0,
+          "num_queries": 3
+        }
+      }
+    },
+    "combined": {
+      "use_refinement": true,
+      "refinement_techniques": [
+        "query_preprocess",
+        "prf",
+        "synonyms"
+      ],
+      "modes": {
+        "bm25": {
+          "map": 0.0,
+          "recall": 0.0,
+          "precision_at_10": 0.0,
+          "ndcg_at_10": 0.0,
+          "num_queries": 3
+        }
+      }
+    }
+  },
+  "deltas_vs_baseline": {
+    "query_preprocess": {
+      "bm25": {
+        "map": 0.0,
+        "recall": 0.0,
+        "precision_at_10": 0.0,
+        "ndcg_at_10": 0.0
+      }
+    },
+    "synonyms": {
+      "bm25": {
+        "map": 0.0,
+        "recall": 0.0,
+        "precision_at_10": 0.0,
+        "ndcg_at_10": 0.0
+      }
+    },
+    "prf": {
+      "bm25": {
+        "map": 0.0,
+        "recall": 0.0,
+        "precision_at_10": 0.0,
+        "ndcg_at_10": 0.0
+      }
+    },
+    "combined": {
+      "bm25": {
+        "map": 0.0,
+        "recall": 0.0,
+        "precision_at_10": 0.0,
+        "ndcg_at_10": 0.0
+      }
+    }
+  }
+}

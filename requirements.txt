@@ -1,0 +1,12 @@
+fastapi
+uvicorn
+pydantic
+requests
+nltk
+ir_datasets
+sentence-transformers
+numpy
+faiss-cpu
+pytest
+streamlit
+streamlit-keyup

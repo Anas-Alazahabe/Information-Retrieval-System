@@ -1,0 +1,15 @@
+{
+  "total_docs": 3,
+  "avg_doc_len": 3.33,
+  "doc_lengths": {"doc1": 4, "doc2": 3, "doc3": 3},
+  "idf_weights": {
+    "hospital": 0.18,
+    "system": 0.18,
+    "security": 0.18
+  },
+  "doc_norms": {
+    "doc1": 3.201562,
+    "doc2": 2.48998,
+    "doc3": 2.54951
+  }
+}

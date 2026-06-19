@@ -1,0 +1,14 @@
+{
+  "hospital": {
+    "doc1": 2.5,
+    "doc2": 1.2
+  },
+  "system": {
+    "doc1": 1.8,
+    "doc3": 2.0
+  },
+  "security": {
+    "doc2": 2.1,
+    "doc3": 1.5
+  }
+}
