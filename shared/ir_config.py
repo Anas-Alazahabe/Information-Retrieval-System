@@ -66,7 +66,8 @@ PREPROCESS_FLAGS: Dict[str, bool] = {
 INDEX_SCALE_CAPS = {
     "dev": 5_000,
     "preval": 30_000,
-    "full": None,
+    # Assignment minimum scale (>200K); supervisor-approved single-dataset target.
+    "full": 200_000,
 }
 
 INDEX_SCALE_MODE = os.environ.get("IR_INDEX_SCALE", "dev")

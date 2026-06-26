@@ -107,7 +107,14 @@ Indexing is slow (minutes to hours). Search is fast (seconds).
 |-----------|------------------|
 | `dev` | 5,000 |
 | `preval` | 30,000 |
-| `full` | unlimited |
+| `full` | 200,000 |
+
+Check checkpoint progress without indexing:
+
+```powershell
+python -m indexing_service.app.core.indexer --status
+python -m indexing_service.app.core.indexer --status --max-docs 100000
+```
 
 ---
 

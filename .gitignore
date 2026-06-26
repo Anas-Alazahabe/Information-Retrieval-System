@@ -32,11 +32,25 @@ Thumbs.db
 # Streamlit secrets (keep config)
 .streamlit/secrets.toml
 
+# Archives and raw dataset dumps
 *.zip
 *.tsv
 *.tar.gz
-*.faiss
-local/
+
+# Local index artifacts (JSON, FAISS, checkpoints) — never commit
 index_data/
+**/.checkpoint/
+*.faiss
+*.pkl
+
+# ir_datasets cache and local embedding model weights
 .ir_datasets/
-evalution_results/
+local/
+
+# Regenerated evaluation outputs (keep repo small)
+evaluation_results/
+!evaluation_results/.gitkeep
+reports/
+
+# Unused large test fixtures (tests use tests/fixtures/matcher_index/)
+tests/fixtures/index_data/

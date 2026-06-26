@@ -82,6 +82,26 @@ class IndexBuilder:
 
         return indexed_count
 
+    def export_state(self) -> Dict[str, Any]:
+        """Serialize in-memory index state for checkpoint/resume."""
+        return {
+            "raw_inverted_index": self.raw_inverted_index,
+            "doc_lengths": self.doc_lengths,
+            "doc_embeddings": self.doc_embeddings,
+            "empty_token_doc_ids": list(self.empty_token_doc_ids),
+            "total_docs": self.total_docs,
+            "total_length": self.total_length,
+        }
+
+    def load_state(self, state: Dict[str, Any]) -> None:
+        """Restore in-memory index state from a checkpoint."""
+        self.raw_inverted_index = state["raw_inverted_index"]
+        self.doc_lengths = state["doc_lengths"]
+        self.doc_embeddings = state["doc_embeddings"]
+        self.empty_token_doc_ids = set(state.get("empty_token_doc_ids", []))
+        self.total_docs = int(state["total_docs"])
+        self.total_length = int(state["total_length"])
+
     def _compute_indices(self) -> Tuple[Dict, Dict, Dict, Dict]:
         """يحسب تمثيلات VSM/BM25 والميتا-بيانات وNorms للوثائق."""
         final_vsm_index: Dict[str, Dict[str, float]] = {}
