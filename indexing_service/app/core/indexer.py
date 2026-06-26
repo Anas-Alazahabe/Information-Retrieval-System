@@ -1,10 +1,17 @@
 import argparse
 import sys
-from pathlib import Path
-
-import ir_datasets
 import requests
+import ir_datasets
+from pathlib import Path
+from sentence_transformers import SentenceTransformer
+import io
+import codecs
 
+# إجبار بايثون على استخدام utf-8
+sys.stdout = io.TextIOWrapper(sys.stdout.detach(), encoding='utf-8')
+sys.stderr = io.TextIOWrapper(sys.stderr.detach(), encoding='utf-8')
+
+# إعداد المسارات
 _ROOT = Path(__file__).resolve().parents[3]
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
@@ -19,19 +26,8 @@ from shared.ir_config import (
     preprocess_batch_url,
 )
 
-
 class DatasetIndexer:
-    """منسّق الفهرسة من `ir_datasets` حتى تخزين المخرجات النهائية.
-
-    هذا الكلاس:
-    1) يقرأ الوثائق من الداتا سِت
-    2) يولّد embeddings (إن توفرت المكتبة)
-    3) يرسل النصوص لخدمة preprocessing
-    4) يمرر النتائج إلى `IndexBuilder`
-    """
-
     def __init__(self, dataset_name: str = DATASET_NAME):
-        """تهيئة الداتا سِت وباني الفهرس."""
         self.dataset_name = dataset_name
         self.dataset = ir_datasets.load(dataset_name)
         self.builder = IndexBuilder()
@@ -43,61 +39,58 @@ class DatasetIndexer:
         index_scale_mode: str = "dev",
         index_dir: str = INDEX_DIR,
     ):
-        """ينفذ دورة الفهرسة كاملة وفق إعدادات الحجم المختارة."""
         if max_docs is None:
             max_docs = get_max_docs_for_scale(index_scale_mode)
         if max_docs is None:
             max_docs = float("inf")
 
-        try:
-            from sentence_transformers import SentenceTransformer
+        # التعديل هنا: تحميل الموديل بشكل صريح وبدون إخفاء الأخطاء (Fail Fast)
+        print(f"Loading embedding model from: {EMBEDDING_MODEL}")
+        embedding_model = SentenceTransformer(EMBEDDING_MODEL)
+        print("✅ Loaded embedding model successfully!")
 
-            embedding_model = SentenceTransformer(EMBEDDING_MODEL)
-            print(f"Loaded embedding model: {EMBEDDING_MODEL}")
-        except Exception as e:
-            print(f"Failed to load embedding model: {e}")
-            embedding_model = None
-
-        current_texts = []
-        current_ids = []
-        current_embeddings = []
         docs = self.dataset.docs_iter()
         loaded_docs = 0
 
-        print(f"Starting indexing for {self.dataset_name} (scale={index_scale_mode}, max_docs={max_docs})")
+        print(f"Starting indexing: Preprocessing -> Embedding -> Indexing")
 
         while loaded_docs < max_docs:
-            try:
-                doc = next(docs)
-            except StopIteration:
-                break
-            except Exception:
-                continue
+            batch_raw_texts = []
+            batch_ids = []
 
-            doc_text = getattr(doc, "text", getattr(doc, "body", ""))
-            doc_text = str(doc_text).strip()
-
-            vector = []
-            if embedding_model:
+            # 1. تجميع النصوص في دفعة
+            while len(batch_raw_texts) < batch_size and loaded_docs < max_docs:
                 try:
-                    vector = embedding_model.encode(doc_text, normalize_embeddings=True).tolist()
-                except Exception:
-                    vector = []
+                    doc = next(docs)
+                    doc_text = getattr(doc, "text", getattr(doc, "body", ""))
+                    batch_raw_texts.append(str(doc_text).strip())
+                    batch_ids.append(doc.doc_id)
+                    loaded_docs += 1
+                except StopIteration:
+                    break
+            
+            if not batch_raw_texts:
+                break
 
-            current_texts.append(doc_text)
-            current_ids.append(doc.doc_id)
-            current_embeddings.append(vector)
-            loaded_docs += 1
+            # 2. تنظيف النصوص قبل الفهرسة والـ Embedding
+            try:
+                payload = {"texts": batch_raw_texts, **PREPROCESS_FLAGS}
+                response = requests.post(preprocess_batch_url(), json=payload)
+                response.raise_for_status()
+                cleaned_texts = response.json()["results"] 
+            except Exception as e:
+                print(f"Preprocessing failed, falling back to raw: {e}")
+                cleaned_texts = batch_raw_texts
 
-            if len(current_texts) >= batch_size:
-                self._index_batch(current_ids, current_texts, current_embeddings)
-                current_texts = []
-                current_ids = []
-                current_embeddings = []
+            # 3. استخراج المتجهات من النصوص النظيفة وتمريرها للفهرسة
+            # تجميع الكلمات المقطعة (Tokens) لتصبح نصاً كاملاً (String) إذا لزم الأمر
+            cleaned_texts_for_embedding = [" ".join(doc) if isinstance(doc, list) else str(doc) for doc in cleaned_texts]
+            vectors = embedding_model.encode(cleaned_texts_for_embedding, normalize_embeddings=True).tolist()
+            
+            # 4. فهرسة النتائج (تمرير النصوص النظيفة والمتجهات الجاهزة)
+            self._index_batch(batch_ids, cleaned_texts, vectors)
 
-        if current_texts:
-            self._index_batch(current_ids, current_texts, current_embeddings)
-
+        # 5. حفظ المانيفست
         manifest = self.builder.save(
             index_dir=index_dir,
             dataset_name=self.dataset_name,
@@ -107,25 +100,15 @@ class DatasetIndexer:
         )
         print(f"Manifest written: {manifest.get('timestamp')}")
 
-    def _index_batch(self, ids, texts, embeddings):
-        """يعالج دفعة نصوص عبر preprocessing ثم يضيفها للفهرس."""
-        payload = {
-            "texts": texts,
-            **PREPROCESS_FLAGS,
-        }
-
+    def _index_batch(self, ids, cleaned_texts, embeddings):
+        """إضافة البيانات للفهرس (مباشرة دون طلب Preprocessing إضافي)."""
         try:
-            response = requests.post(preprocess_batch_url(), json=payload)
-            response.raise_for_status()
-            results = response.json()["results"]
-            count = self.builder.add_documents(ids, results, embeddings)
+            count = self.builder.add_documents(ids, cleaned_texts, embeddings)
             print(f"Indexed batch of {count} documents.")
         except Exception as e:
-            print(f"Batch preprocessing failed: {e}")
-
+            print(f"Indexing failed in _index_batch: {e}")
 
 def main():
-    """نقطة الدخول لسطر الأوامر لبناء الفهارس."""
     parser = argparse.ArgumentParser(description="Build IR index from ir_datasets collection")
     parser.add_argument("--dataset", default=DATASET_NAME)
     parser.add_argument("--scale", default="dev", choices=["dev", "preval", "full"])
@@ -141,7 +124,6 @@ def main():
         index_scale_mode=args.scale,
         index_dir=args.index_dir,
     )
-
 
 if __name__ == "__main__":
     main()

@@ -4,6 +4,13 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional
+import locale # أضيفي هذه
+
+locale.getpreferredencoding = lambda *args, **kwargs: "utf-8"
+
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Dict, List, Optional
 
 import requests
 from fastapi import FastAPI, HTTPException

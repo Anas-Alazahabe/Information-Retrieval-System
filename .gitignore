@@ -31,3 +31,12 @@ Thumbs.db
 
 # Streamlit secrets (keep config)
 .streamlit/secrets.toml
+
+*.zip
+*.tsv
+*.tar.gz
+*.faiss
+local/
+index_data/
+.ir_datasets/
+evalution_results/
