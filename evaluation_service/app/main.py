@@ -21,6 +21,7 @@ if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
 from evaluation_service.app.metrics import aggregate_metrics, evaluate_ranked_list
+from shared.ir_datasets_patch import patch_ir_datasets_tsv_utf8
 from shared.ir_config import EVAL_DATASET_NAME, REFINEMENT_URL, RETRIEVAL_URL, VALID_REPRESENTATION_MODES
 from shared.search_pipeline import search_with_optional_refinement
 
@@ -45,6 +46,7 @@ class EvaluateRequest(BaseModel):
 def _load_queries_and_qrels(dataset_name: str):
     """تحميل الاستعلامات وqrels من ir_datasets."""
     os.environ.setdefault("PYTHONUTF8", "1")
+    patch_ir_datasets_tsv_utf8()
     import ir_datasets
 
     dataset = ir_datasets.load(dataset_name)

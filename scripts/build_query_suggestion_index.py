@@ -13,6 +13,7 @@ sys.path.insert(0, str(ROOT))
 os.environ.setdefault("PYTHONUTF8", "1")
 
 from shared.ir_config import EVAL_DATASET_NAME, QUERY_SUGGESTIONS_PATH
+from shared.ir_datasets_patch import patch_ir_datasets_tsv_utf8
 
 
 def _normalize_query(text: str) -> str:
@@ -22,6 +23,7 @@ def _normalize_query(text: str) -> str:
 def load_queries(dataset_name: str) -> set[str]:
     import ir_datasets
 
+    patch_ir_datasets_tsv_utf8()
     dataset = ir_datasets.load(dataset_name)
     queries: set[str] = set()
     for query in dataset.queries_iter():

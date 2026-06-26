@@ -15,6 +15,7 @@ _ROOT = Path(__file__).resolve().parents[3]
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
+from shared.ir_datasets_patch import patch_ir_datasets_tsv_utf8
 from shared.index_builder import IndexBuilder
 from shared.index_checkpoint import (
     acquire_indexer_lock,
@@ -37,61 +38,13 @@ from shared.ir_config import (
 )
 
 
-def _patch_ir_datasets_tsv_utf8() -> None:
-    """Force UTF-8 when reading MS MARCO TSV on Windows (avoids cp1252 decode errors)."""
-    import ir_datasets.formats.tsv as tsv_mod
-
-    if getattr(tsv_mod.FileLineIter, "_utf8_patched", False):
-        return
-
-    def _open_utf8_stream(self, raw_stream):
-        return io.TextIOWrapper(raw_stream, encoding="utf-8", errors="replace")
-
-    def _patched_next(self):
-        if self.stop is not None and self.start >= self.stop:
-            self.ctxt.close()
-            raise StopIteration
-        if self.stream is None:
-            if isinstance(self.dlc, list):
-                self.stream = _open_utf8_stream(
-                    self, self.ctxt.enter_context(self.dlc[self.stream_idx].stream())
-                )
-            else:
-                self.stream = _open_utf8_stream(
-                    self, self.ctxt.enter_context(self.dlc.stream())
-                )
-        line = ""
-        while self.pos < self.start:
-            line = self.stream.readline()
-            if line != "\n":
-                self.pos += 1
-        if line == "":
-            if isinstance(self.dlc, list):
-                self.stream_idx += 1
-                if self.stream_idx < len(self.dlc):
-                    self.stream = _open_utf8_stream(
-                        self,
-                        self.ctxt.enter_context(self.dlc[self.stream_idx].stream()),
-                    )
-                    line = self.stream.readline()
-                else:
-                    raise StopIteration()
-            else:
-                raise StopIteration()
-        self.start += self.step
-        return line
-
-    tsv_mod.FileLineIter.__next__ = _patched_next
-    tsv_mod.FileLineIter._utf8_patched = True
-
-
 class DatasetIndexer:
     """Index ir_datasets documents with optional checkpoint/resume."""
 
     def __init__(self, dataset_name: str = DATASET_NAME):
         import ir_datasets
 
-        _patch_ir_datasets_tsv_utf8()
+        patch_ir_datasets_tsv_utf8()
         self.dataset_name = dataset_name
         self.dataset = ir_datasets.load(dataset_name)
         self.builder = IndexBuilder()
