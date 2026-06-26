@@ -17,12 +17,14 @@ if str(_ROOT) not in sys.path:
 
 from shared.index_builder import IndexBuilder
 from shared.index_checkpoint import (
+    acquire_indexer_lock,
     build_run_config,
     clear_checkpoint,
     configs_compatible,
     load_checkpoint,
     new_run_id,
     print_indexing_status,
+    release_indexer_lock,
     save_checkpoint,
 )
 from shared.ir_config import (
@@ -145,6 +147,7 @@ class DatasetIndexer:
         checkpoint_every: int = 1,
     ):
         self._index_dir = index_dir
+        lock_file = None
         if max_docs is None:
             max_docs = get_max_docs_for_scale(index_scale_mode)
         if max_docs is None:
@@ -262,6 +265,7 @@ class DatasetIndexer:
         )
 
         try:
+            lock_file = acquire_indexer_lock(index_dir)
             while loaded_docs < max_docs and not self._interrupt_requested:
                 batch_raw_texts = []
                 batch_ids = []
@@ -325,6 +329,8 @@ class DatasetIndexer:
             print("Error during indexing — saving checkpoint before exit.")
             self._write_checkpoint(status="paused")
             raise
+        finally:
+            release_indexer_lock(lock_file)
 
 
 def main():

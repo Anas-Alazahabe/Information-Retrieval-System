@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+import os
 import pickle
+import subprocess
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -16,6 +18,63 @@ CHECKPOINT_VERSION = 1
 CHECKPOINT_DIR_NAME = ".checkpoint"
 META_FILENAME = "checkpoint.json"
 STATE_FILENAME = "builder_state.pkl"
+STATE_TMP_FILENAME = "builder_state.pkl.tmp"
+STATE_BACKUP_FILENAME = "builder_state.pkl.bak"
+LOCK_FILENAME = "indexer.lock"
+
+
+def _pid_alive(pid: int) -> bool:
+    try:
+        result = subprocess.run(
+            ["tasklist", "/FI", f"PID eq {pid}", "/NH"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        return str(pid) in result.stdout
+    except Exception:
+        return False
+
+
+def acquire_indexer_lock(index_dir: str) -> Path:
+    """Prevent two indexers from corrupting the same checkpoint."""
+    lock = checkpoint_dir(index_dir) / LOCK_FILENAME
+    lock.parent.mkdir(parents=True, exist_ok=True)
+    if lock.is_file():
+        try:
+            existing_pid = int(lock.read_text(encoding="utf-8").strip())
+        except ValueError:
+            existing_pid = -1
+        if existing_pid > 0 and _pid_alive(existing_pid):
+            raise RuntimeError(
+                f"Another indexer is already running (PID {existing_pid}). "
+                "Stop it before starting a new one."
+            )
+        lock.unlink(missing_ok=True)
+
+    flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY
+    try:
+        fd = os.open(str(lock), flags)
+        try:
+            os.write(fd, str(os.getpid()).encode("utf-8"))
+        finally:
+            os.close(fd)
+    except FileExistsError as exc:
+        raise RuntimeError(
+            "Another indexer is already running (lock file exists). "
+            "Stop it before starting a new one."
+        ) from exc
+    return lock
+
+
+def release_indexer_lock(lock: Optional[Path]) -> None:
+    if lock is None or not lock.is_file():
+        return
+    try:
+        if int(lock.read_text(encoding="utf-8").strip()) == os.getpid():
+            lock.unlink()
+    except (ValueError, OSError):
+        pass
 
 
 def checkpoint_dir(index_dir: str) -> Path:
@@ -89,7 +148,7 @@ def load_checkpoint(index_dir: str) -> Tuple[Optional[Dict[str, Any]], Optional[
     """Load checkpoint metadata and builder state if present."""
     meta_file = meta_path(index_dir)
     state_file = state_path(index_dir)
-    if not meta_file.is_file() or not state_file.is_file():
+    if not meta_file.is_file():
         return None, None
 
     with meta_file.open("r", encoding="utf-8") as handle:
@@ -98,12 +157,30 @@ def load_checkpoint(index_dir: str) -> Tuple[Optional[Dict[str, Any]], Optional[
     if meta.get("checkpoint_version") != CHECKPOINT_VERSION:
         return meta, None
 
-    with state_file.open("rb") as handle:
-        state = pickle.load(handle)
+    state_candidates = [state_file]
+    backup = state_file.with_name(STATE_BACKUP_FILENAME)
+    if backup.is_file():
+        state_candidates.append(backup)
 
-    builder = IndexBuilder()
-    builder.load_state(state)
-    return meta, builder
+    last_error: Optional[Exception] = None
+    for candidate in state_candidates:
+        if not candidate.is_file():
+            continue
+        try:
+            with candidate.open("rb") as handle:
+                state = pickle.load(handle)
+            builder = IndexBuilder()
+            builder.load_state(state)
+            return meta, builder
+        except Exception as exc:
+            last_error = exc
+
+    if last_error is not None:
+        raise RuntimeError(
+            f"Checkpoint state file is unreadable ({last_error}). "
+            "Wait for any running indexer to finish, or restore from backup."
+        ) from last_error
+    return meta, None
 
 
 def save_checkpoint(
@@ -125,11 +202,20 @@ def save_checkpoint(
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
 
-    with meta_path(index_dir).open("w", encoding="utf-8") as handle:
+    meta_out = meta_path(index_dir)
+    meta_tmp = meta_out.with_suffix(".json.tmp")
+    with meta_tmp.open("w", encoding="utf-8") as handle:
         json.dump(meta, handle, ensure_ascii=False, indent=2)
+    meta_tmp.replace(meta_out)
 
-    with state_path(index_dir).open("wb") as handle:
+    state_out = state_path(index_dir)
+    state_tmp = state_out.with_name(STATE_TMP_FILENAME)
+    if state_out.is_file():
+        backup = state_out.with_name(STATE_BACKUP_FILENAME)
+        state_out.replace(backup)
+    with state_tmp.open("wb") as handle:
         pickle.dump(builder.export_state(), handle)
+    state_tmp.replace(state_out)
 
     return meta
 
@@ -137,7 +223,7 @@ def save_checkpoint(
 def clear_checkpoint(index_dir: str) -> None:
     """Remove checkpoint files after a successful final save."""
     ckpt = checkpoint_dir(index_dir)
-    for name in (META_FILENAME, STATE_FILENAME):
+    for name in (META_FILENAME, STATE_FILENAME, STATE_TMP_FILENAME, STATE_BACKUP_FILENAME):
         path = ckpt / name
         if path.is_file():
             path.unlink()
