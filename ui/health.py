@@ -14,6 +14,7 @@ def fetch_system_status(
     refinement_health_url: str,
     personalization_health_url: str,
     clustering_health_url: Optional[str] = None,
+    rag_health_url: Optional[str] = None,
 ) -> Dict[str, Any]:
     status = {
         "retrieval_ok": False,
@@ -23,11 +24,14 @@ def fetch_system_status(
         "personalization_db": False,
         "clustering_ok": False,
         "cluster_artifacts_ready": False,
+        "rag_ok": False,
+        "rag_gemini": False,
+        "rag_db": False,
         "suggestions_loaded": False,
         "suggestions_count": 0,
     }
     try:
-        health_resp = requests.get(retrieval_health_url, timeout=2)
+        health_resp = requests.get(retrieval_health_url, timeout=10)
         if health_resp.status_code == 200:
             status["retrieval_ok"] = True
             status["index_ready"] = bool(health_resp.json().get("index_files_detected"))
@@ -65,6 +69,17 @@ def fetch_system_status(
         except Exception:
             pass
 
+    if rag_health_url:
+        try:
+            rag_health = requests.get(rag_health_url, timeout=2)
+            if rag_health.status_code == 200:
+                health_data = rag_health.json()
+                status["rag_ok"] = True
+                status["rag_gemini"] = bool(health_data.get("gemini_configured"))
+                status["rag_db"] = bool(health_data.get("database_connected"))
+        except Exception:
+            pass
+
     return status
 
 
@@ -73,6 +88,7 @@ def fetch_system_status_cached(
     refinement_health_url: str,
     personalization_health_url: str,
     clustering_health_url: Optional[str] = None,
+    rag_health_url: Optional[str] = None,
 ) -> Dict[str, Any]:
     cache = st.session_state.get(STATUS_CACHE_KEY)
     now = time.time()
@@ -83,6 +99,7 @@ def fetch_system_status_cached(
         refinement_health_url,
         personalization_health_url,
         clustering_health_url,
+        rag_health_url,
     )
     st.session_state[STATUS_CACHE_KEY] = {"status": status, "fetched_at": now}
     return status
@@ -93,6 +110,7 @@ def render_system_status(
     *,
     use_refinement: bool,
     use_personalization: bool,
+    use_rag: bool = False,
     refinement_techniques: list[str],
     search_history_len: int,
 ) -> None:
@@ -100,6 +118,10 @@ def render_system_status(
     st.sidebar.markdown("**حالة النظام**")
     st.sidebar.caption("ماذا يفعل هذا؟ يخبرك إن كان البحث جاهزاً للاستخدام.")
     st.sidebar.caption("لماذا تستخدمه؟ لتجنب الأخطاء قبل إجراء البحث.")
+
+    if st.sidebar.button("تحديث حالة النظام", key="refresh_system_status"):
+        st.session_state.pop(STATUS_CACHE_KEY, None)
+        st.rerun()
 
     if system_status["retrieval_ok"] and system_status["index_ready"]:
         if not use_refinement or system_status["refinement_ok"]:
@@ -122,6 +144,12 @@ def render_system_status(
         st.sidebar.caption("التخصيص: متاح (قاعدة البيانات متصلة)")
     elif use_personalization:
         st.sidebar.caption("التخصيص: غير متاح — النتائج بدون إعادة ترتيب شخصية")
+
+    if system_status.get("rag_ok") and system_status.get("rag_gemini"):
+        db_note = "قاعدة البيانات متصلة" if system_status.get("rag_db") else "قاعدة البيانات غير متصلة"
+        st.sidebar.caption(f"RAG: متاح (Gemini + {db_note})")
+    elif use_rag:
+        st.sidebar.caption("RAG: غير متاح — تحقق من الخدمة ومفتاح Gemini")
 
     with st.sidebar.expander("تفاصيل تقنية للنظام", expanded=False):
         if system_status["retrieval_ok"]:
@@ -163,6 +191,13 @@ def render_system_status(
             st.caption(f"clustering_service (8005): متصلة ({cluster_label})")
         else:
             st.caption("clustering_service (8005): غير متصلة (اختيارية)")
+
+        if system_status.get("rag_ok"):
+            gemini_label = "مضبوط" if system_status.get("rag_gemini") else "غير مضبوط"
+            db_label = "متصل" if system_status.get("rag_db") else "غير متصل"
+            st.caption(f"rag_service (8006): متصلة (Gemini: {gemini_label}, MySQL: {db_label})")
+        else:
+            st.caption("rag_service (8006): غير متصلة (اختيارية)")
 
         st.caption("preprocessing_service (8000): مطلوبة للفهرسة والبحث")
 

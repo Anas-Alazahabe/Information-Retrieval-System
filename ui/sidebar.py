@@ -10,10 +10,13 @@ from ui.constants import (
     DEFAULT_PERSONALIZATION_USER,
     DEFAULT_REFINEMENT_PRESET,
     DEFAULT_RETRIEVAL_MODE,
+    DEFAULT_RAG_CONTEXT_DOCS,
     DEFAULT_SEARCH_MODE,
     PERSONALIZATION_SECTION,
     PERSONALIZATION_USER_HINTS,
     PERSONALIZATION_USER_OPTIONS,
+    RAG_CONTEXT_DOC_OPTIONS,
+    RAG_SECTION,
     REFINEMENT_PRESET_HINTS,
     REFINEMENT_PRESETS,
     REFINEMENT_SECTION,
@@ -35,6 +38,8 @@ class SearchSettings:
     refinement_techniques: List[str]
     use_personalization: bool
     personalization_user_id: Optional[str]
+    use_rag: bool
+    rag_top_context_docs: int
     k1: float
     b: float
     top_n_filter: int
@@ -60,6 +65,8 @@ def render_sidebar(
     *,
     personalization_url: str,
     personalize_profile_url_fn,
+    rag_ready: bool = True,
+    rag_gemini_configured: bool = True,
 ) -> SearchSettings:
     if "ui_defaults_applied" not in st.session_state:
         st.session_state.ui_defaults_applied = True
@@ -185,6 +192,31 @@ def render_sidebar(
             )
 
     st.sidebar.markdown("---")
+    st.sidebar.markdown(RAG_SECTION, unsafe_allow_html=True)
+
+    rag_disabled = not rag_ready or not rag_gemini_configured
+    use_rag = st.sidebar.checkbox(
+        "تفعيل الإجابة الذكية (RAG)",
+        value=False,
+        disabled=rag_disabled,
+        help="Generates a natural-language answer from top retrieved passages via Gemini.",
+    )
+    if rag_disabled:
+        if not rag_ready:
+            st.sidebar.caption("خدمة RAG غير متصلة — شغّل rag_service على المنفذ 8006")
+        elif not rag_gemini_configured:
+            st.sidebar.caption("GEMINI_API_KEY غير مضبوط — أضفه في ملف .env")
+
+    rag_top_context_docs = DEFAULT_RAG_CONTEXT_DOCS
+    if use_rag:
+        default_rag_idx = RAG_CONTEXT_DOC_OPTIONS.index(DEFAULT_RAG_CONTEXT_DOCS)
+        rag_top_context_docs = st.sidebar.selectbox(
+            "عدد المقاطع المستخدمة في الإجابة",
+            options=RAG_CONTEXT_DOC_OPTIONS,
+            index=default_rag_idx,
+        )
+
+    st.sidebar.markdown("---")
     with st.sidebar.expander("إعدادات متقدمة", expanded=False):
         st.caption("ماذا يفعل هذا؟ ضبط دقيق لخبراء IR والعرض الأكاديمي.")
         st.caption("لماذا؟ للتجارب المتقدمة — الافتراضيات مناسبة للعرض التوضيحي.")
@@ -231,6 +263,8 @@ def render_sidebar(
         refinement_techniques=refinement_techniques,
         use_personalization=use_personalization,
         personalization_user_id=personalization_user_id,
+        use_rag=use_rag,
+        rag_top_context_docs=rag_top_context_docs,
         k1=k1,
         b=b,
         top_n_filter=top_n_filter,

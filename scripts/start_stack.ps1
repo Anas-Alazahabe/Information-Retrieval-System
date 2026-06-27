@@ -24,7 +24,7 @@ function Stop-Port($port) {
         ForEach-Object { Stop-Process -Id $_ -Force -ErrorAction SilentlyContinue }
 }
 
-8000, 8002, 8003, 8004, 8005, 8501 | ForEach-Object { Stop-Port $_ }
+8000, 8002, 8003, 8004, 8005, 8006, 8501 | ForEach-Object { Stop-Port $_ }
 Start-Sleep -Seconds 1
 
 Get-ChildItem -Path $Root -Recurse -Directory -Filter __pycache__ |
@@ -35,8 +35,9 @@ Start-Process -FilePath $Python -ArgumentList "-m", "uvicorn", "app.main:app", "
 Start-Process -FilePath $Python -ArgumentList "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", "8003" -WorkingDirectory (Join-Path $Root "query_refinement_service")
 Start-Process -FilePath $Python -ArgumentList "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", "8004" -WorkingDirectory (Join-Path $Root "personalization_service")
 Start-Process -FilePath $Python -ArgumentList "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", "8005" -WorkingDirectory (Join-Path $Root "clustering_service")
+Start-Process -FilePath $Python -ArgumentList "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", "8006" -WorkingDirectory (Join-Path $Root "rag_service")
 
 Start-Sleep -Seconds 3
 Start-Process -FilePath $Python -ArgumentList "-m", "streamlit", "run", "app_ui.py", "--server.port", "8501" -WorkingDirectory $Root
 
-Write-Host "Started: preprocessing:8000 retrieval:8002 refinement:8003 personalization:8004 clustering:8005 streamlit:8501"
+Write-Host "Started: preprocessing:8000 retrieval:8002 refinement:8003 personalization:8004 clustering:8005 rag:8006 streamlit:8501"

@@ -139,6 +139,15 @@ PERSONALIZATION_SECTION = section_header(
     "نفس الاستعلام قد يعطي ترتيباً مختلفاً لكل مستخدم.",
 )
 
+RAG_SECTION = section_header(
+    "الإجابة الذكية (RAG)",
+    "يولّد إجابة بلغة طبيعية من المقاطع المسترجعة.",
+    "مفيد عندما تريد ملخصاً مباشراً بدلاً من قراءة كل وثيقة.",
+)
+
+RAG_CONTEXT_DOC_OPTIONS = [3, 5, 8]
+DEFAULT_RAG_CONTEXT_DOCS = 5
+
 RETRIEVAL_SECTION = section_header(
     "كيف نجد النتائج؟",
     "يحدد طريقة مطابقة استعلامك مع النصوص.",

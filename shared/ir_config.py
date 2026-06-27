@@ -17,6 +17,11 @@ RETRIEVAL_URL = os.environ.get("IR_RETRIEVAL_URL", "http://127.0.0.1:8002")
 REFINEMENT_URL = os.environ.get("IR_REFINEMENT_URL", "http://127.0.0.1:8003")
 PERSONALIZATION_URL = os.environ.get("IR_PERSONALIZATION_URL", "http://127.0.0.1:8004")
 CLUSTERING_URL = os.environ.get("IR_CLUSTERING_URL", "http://127.0.0.1:8005")
+RAG_URL = os.environ.get("IR_RAG_URL", "http://127.0.0.1:8006")
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
+RAG_DEFAULT_MODEL = os.environ.get("IR_RAG_MODEL", "gemini-flash-latest")
+RAG_TOP_CONTEXT_DOCS = int(os.environ.get("IR_RAG_TOP_CONTEXT_DOCS", "5"))
+RAG_MAX_CONTEXT_CHARS = int(os.environ.get("IR_RAG_MAX_CONTEXT_CHARS", "12000"))
 DATASET_NAME = os.environ.get("IR_DATASET", "msmarco-passage")
 EVAL_DATASET_NAME = os.environ.get("IR_EVAL_DATASET", "msmarco-passage/dev")
 # EMBEDDING_MODEL = os.environ.get("IR_EMBEDDING_MODEL", "all-MiniLM-L6-v2")
@@ -228,3 +233,15 @@ def clustering_comparison_url(base_url: Optional[str] = None) -> str:
     """Build URL for cluster visualization PNG."""
     root = (base_url or CLUSTERING_URL).rstrip("/")
     return f"{root}/cluster/comparison"
+
+
+def rag_generate_url(base_url: Optional[str] = None) -> str:
+    """Build URL for RAG answer generation."""
+    root = (base_url or RAG_URL).rstrip("/")
+    return f"{root}/generate"
+
+
+def rag_health_url(base_url: Optional[str] = None) -> str:
+    """Build URL for RAG service health check."""
+    root = (base_url or RAG_URL).rstrip("/")
+    return f"{root}/health"

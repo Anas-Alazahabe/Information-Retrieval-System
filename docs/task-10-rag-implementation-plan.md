@@ -36,7 +36,7 @@ We implement LLM usage here, not in refinement, to keep qrels evaluation clean.
 
 ### In scope (defensible §10 deliverable)
 
-1. **`rag_service`** — new FastAPI microservice (port **8005**).
+1. **`rag_service`** — new FastAPI microservice (port **8006**; clustering uses 8005).
 2. **Context assembly** — fetch top-*N* passage texts for retrieved `doc_id`s from MySQL.
 3. **Gemini generation** — grounded answer + inline citations (`[doc_id]`).
 4. **Pipeline orchestration** — extend `shared/search_pipeline.py` with optional RAG step after search (and after personalization if enabled).
@@ -75,7 +75,7 @@ We implement LLM usage here, not in refinement, to keep qrels evaluation clean.
                          ▼                                    ┌─────────────────────┐
                 ┌─────────────────┐                           │ MySQL documents     │
                 │ rag_service     │◄── fetch passage texts ──│ (id, content)       │
-                │ (8005)          │                           └─────────────────────┘
+                │ (8006)          │                           └─────────────────────┘
                 │  Gemini API     │
                 └────────┬────────┘
                          ▼
@@ -99,7 +99,7 @@ Follow the same pattern as `personalization_service` (Task 16):
 | retrieval | 8002 | Ranked search |
 | query_refinement | 8003 | Optional query improve |
 | personalization | 8004 | Optional rerank |
-| **rag** | **8005** | **Context + Gemini answer** |
+| **rag** | **8006** | **Context + Gemini answer** |
 
 ---
 
@@ -196,7 +196,7 @@ rag_service/
 $env:GEMINI_API_KEY="your_key_here"
 # optional overrides:
 $env:IR_RAG_MODEL="gemini-2.0-flash"
-$env:IR_RAG_URL="http://127.0.0.1:8005"
+$env:IR_RAG_URL="http://127.0.0.1:8006"
 ```
 
 **Client behavior:**
@@ -256,7 +256,7 @@ Flow:
 Config additions in `shared/ir_config.py`:
 
 ```python
-RAG_URL = os.environ.get("IR_RAG_URL", "http://127.0.0.1:8005")
+RAG_URL = os.environ.get("IR_RAG_URL", "http://127.0.0.1:8006")
 RAG_DEFAULT_MODEL = os.environ.get("IR_RAG_MODEL", "gemini-2.0-flash")
 RAG_TOP_CONTEXT_DOCS = int(os.environ.get("IR_RAG_TOP_CONTEXT_DOCS", "5"))
 RAG_MAX_CONTEXT_CHARS = int(os.environ.get("IR_RAG_MAX_CONTEXT_CHARS", "12000"))
@@ -371,7 +371,7 @@ Manual test checklist:
 ```powershell
 # Terminal 1–4: preprocessing, retrieval, (refinement), (personalization)
 cd rag_service
-uvicorn app.main:app --host 127.0.0.1 --port 8005 --reload
+uvicorn app.main:app --host 127.0.0.1 --port 8006 --reload
 
 $env:GEMINI_API_KEY="..."
 streamlit run app_ui.py
@@ -446,7 +446,7 @@ python migrate_to_db.py   # if not done
 
 # Services
 cd rag_service
-uvicorn app.main:app --host 127.0.0.1 --port 8005 --reload
+uvicorn app.main:app --host 127.0.0.1 --port 8006 --reload
 
 # UI: enable "إجابة ذكية (RAG)"
 streamlit run app_ui.py
@@ -455,7 +455,7 @@ streamlit run app_ui.py
 **Direct API test:**
 
 ```powershell
-curl -X POST http://127.0.0.1:8005/generate `
+curl -X POST http://127.0.0.1:8006/generate `
   -H "Content-Type: application/json" `
   -d '{"query":"how to tie a tie","results":{"123":9.5,"456":8.1},"top_context_docs":3}'
 ```
@@ -467,7 +467,7 @@ curl -X POST http://127.0.0.1:8005/generate `
 1. User can search with RAG off → same behavior and metrics as today.
 2. User can enable RAG → natural-language answer with `[DOC id]` citations.
 3. Ranked doc list still visible (IR core preserved).
-4. Service runs independently on port 8005 with `/health`.
+4. Service runs independently on port 8006 with `/health`.
 5. Tests pass without real API key.
 6. Arabic report section explains design, demo, and limitations.
 

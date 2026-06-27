@@ -42,6 +42,8 @@ def render_summary_strip(
     *,
     use_refinement: bool,
     use_personalization: bool,
+    rag_meta: Optional[dict] = None,
+    use_rag: bool = False,
 ) -> None:
     chips: list[str] = []
 
@@ -91,6 +93,25 @@ def render_summary_strip(
     else:
         chips.append(
             "<span class='summary-chip'><strong>تخصيص:</strong> معطّل</span>"
+        )
+
+    if use_rag:
+        if rag_meta and rag_meta.get("answer"):
+            model = rag_meta.get("model", "")
+            ctx_count = len(rag_meta.get("context_doc_ids") or [])
+            gen_ms = (rag_meta.get("timing") or {}).get("generate_ms")
+            gen_label = f" · {gen_ms:.0f} ms" if gen_ms is not None else ""
+            chips.append(
+                f"<span class='summary-chip'><strong>RAG:</strong> مفعّل — "
+                f"{ctx_count} مقطع · {model}{gen_label}</span>"
+            )
+        else:
+            chips.append(
+                "<span class='summary-chip'><strong>RAG:</strong> غير متاح</span>"
+            )
+    else:
+        chips.append(
+            "<span class='summary-chip'><strong>RAG:</strong> معطّل</span>"
         )
 
     timing = data.get("timing") or {}
@@ -148,16 +169,35 @@ def _render_personalization_details(personalization_meta: dict) -> None:
             )
 
 
+def _render_rag_details(rag_meta: dict) -> None:
+    st.markdown("#### الإجابة الذكية (RAG)")
+    st.markdown(f"**model:** {rag_meta.get('model', '')}")
+    st.markdown(f"**answer:** {rag_meta.get('answer', '')}")
+    context_ids = rag_meta.get("context_doc_ids") or []
+    if context_ids:
+        st.caption(f"context_doc_ids: {', '.join(context_ids)}")
+    timing = rag_meta.get("timing") or {}
+    if timing:
+        st.caption(
+            f"fetch_ms={timing.get('fetch_ms')} · "
+            f"generate_ms={timing.get('generate_ms')} · "
+            f"total_ms={timing.get('total_ms')}"
+        )
+
+
 def render_technical_details(
     data: Dict[str, Any],
     refinement_meta: Optional[dict],
     personalization_meta: Optional[dict],
+    rag_meta: Optional[dict] = None,
 ) -> None:
     with st.expander("تفاصيل تقنية (للعرض الأكاديمي)", expanded=False):
         if refinement_meta:
             _render_enhancement_details(refinement_meta)
         if personalization_meta:
             _render_personalization_details(personalization_meta)
+        if rag_meta:
+            _render_rag_details(rag_meta)
 
         matching_method = data.get("matching_method")
         if matching_method:

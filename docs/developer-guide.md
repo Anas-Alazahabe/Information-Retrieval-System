@@ -48,7 +48,8 @@ Artifacts are written to `index_data/` at the project root.
 **Terminal 3 (optional):** query refinement on port `8003` — required when using synonyms/PRF in the UI  
 **Terminal 4 (optional):** personalization on port `8004` — required when using result personalization  
 **Terminal 5 (optional):** clustering on port `8005` — required for cluster visualization  
-**Terminal 6:** `streamlit run app_ui.py`
+**Terminal 6 (optional):** RAG on port `8006` — required for smart answers in the UI  
+**Terminal 7:** `streamlit run app_ui.py`
 
 ```powershell
 # retrieval
@@ -66,6 +67,10 @@ uvicorn app.main:app --host 127.0.0.1 --port 8004 --reload
 # clustering (optional; needed for Task 15 document clustering viz)
 cd clustering_service
 uvicorn app.main:app --host 127.0.0.1 --port 8005 --reload
+
+# RAG (optional; needed for Task 10 smart answers — set GEMINI_API_KEY in .env)
+cd rag_service
+uvicorn app.main:app --host 127.0.0.1 --port 8006 --reload
 ```
 
 WordNet is downloaded automatically on first synonym expansion. To pre-download:
@@ -185,7 +190,43 @@ Health: `http://127.0.0.1:8005/health` → `cluster_artifacts_ready: true`
 Visualization: `http://127.0.0.1:8005/cluster/comparison`  
 The Streamlit UI also shows the cluster plot at the bottom of the main page.
 
-**Port note:** 8005 is also planned for future RAG — if both features are added, renumber one service.
+**Port note:** clustering uses **8005**; RAG uses **8006**.
+
+---
+
+## RAG (Task 10)
+
+Optional natural-language answers grounded in retrieved MS MARCO passages via Gemini.
+
+### Prerequisites
+
+1. MySQL `documents` table populated (`python migrate_to_db.py` or `scripts/setup_personalization_db.py --migrate-docs`).
+2. Copy `.env.example` to `.env` and set `GEMINI_API_KEY` (never commit `.env`).
+
+### Start RAG service
+
+Included in `scripts/start_stack.ps1` on port **8006**, or manually:
+
+```powershell
+cd rag_service
+uvicorn app.main:app --host 127.0.0.1 --port 8006 --reload
+```
+
+Health: `http://127.0.0.1:8006/health` → `gemini_configured: true`, `database_connected: true`
+
+### UI
+
+Enable **تفعيل الإجابة الذكية (RAG)** in the sidebar. Ranked results remain visible; the generated answer appears above them.
+
+RAG is **off** by default and does not affect `evaluation_service` batch metrics.
+
+### Direct API test
+
+```powershell
+curl -X POST http://127.0.0.1:8006/generate `
+  -H "Content-Type: application/json" `
+  -d '{"query":"how to tie a tie","results":{"123":9.5,"456":8.1},"top_context_docs":3}'
+```
 
 ---
 
@@ -258,7 +299,7 @@ Matcher unit tests: `pytest tests/test_matchers.py -q`
 
 ## Environment variables
 
-See `shared/ir_config.py`. Common overrides: `IR_INDEX_DIR`, `IR_INDEX_SCALE`, `IR_MAX_DOCS`, `IR_PREPROCESS_URL`, `IR_RETRIEVAL_URL`, `IR_REFINEMENT_URL`, `IR_PERSONALIZATION_URL`, `IR_CLUSTERING_URL`, `IR_CLUSTER_MAX_K`, `IR_CLUSTER_VIZ_MAX`, `MYSQL_HOST`, `MYSQL_USER`, `MYSQL_PASSWORD`, `MYSQL_DATABASE`, `IR_QUERY_SUGGESTIONS`.
+See `shared/ir_config.py`. Common overrides: `IR_INDEX_DIR`, `IR_INDEX_SCALE`, `IR_MAX_DOCS`, `IR_PREPROCESS_URL`, `IR_RETRIEVAL_URL`, `IR_REFINEMENT_URL`, `IR_PERSONALIZATION_URL`, `IR_CLUSTERING_URL`, `IR_RAG_URL`, `IR_RAG_MODEL`, `GEMINI_API_KEY`, `IR_CLUSTER_MAX_K`, `IR_CLUSTER_VIZ_MAX`, `MYSQL_HOST`, `MYSQL_USER`, `MYSQL_PASSWORD`, `MYSQL_DATABASE`, `IR_QUERY_SUGGESTIONS`.
 
 ---
 
@@ -273,6 +314,7 @@ pytest tests/ -q
 ## Further reading
 
 - [`docs/task-05.md`](task-05.md) — query refinement
+- [`docs/task-10-rag-implementation-plan.md`](task-10-rag-implementation-plan.md) — RAG (Gemini)
 - [`docs/task-15-clustering.md`](task-15-clustering.md) — document clustering
 - [`docs/task-16-personalization.md`](task-16-personalization.md) — personalization
 - [`docs/task-06.md`](task-06.md) — query matching & ranking

@@ -8,10 +8,14 @@ from shared.ir_config import (
     PERSONALIZATION_ALPHA,
     PERSONALIZATION_RERANK_POOL,
     PERSONALIZATION_URL,
+    RAG_MAX_CONTEXT_CHARS,
+    RAG_TOP_CONTEXT_DOCS,
+    RAG_URL,
     RETRIEVAL_URL,
     personalize_click_event_url,
     personalize_query_event_url,
     personalize_rerank_url,
+    rag_generate_url,
     refine_url,
 )
 
@@ -200,4 +204,84 @@ def search_with_personalization(
         "search": search_payload,
         "refinement": pipeline["refinement"],
         "personalization": personalization_meta,
+    }
+
+
+def search_with_rag(
+    raw_query: str,
+    representation_mode: str,
+    use_refinement: bool,
+    use_personalization: bool,
+    use_rag: bool,
+    techniques: List[str],
+    *,
+    user_id: Optional[str] = None,
+    previous_queries: Optional[List[str]] = None,
+    k1: float = 1.5,
+    b: float = 0.75,
+    top_n_filter: int = 100,
+    top_k: Optional[int] = None,
+    alpha: Optional[float] = None,
+    rag_top_context_docs: Optional[int] = None,
+    refine_timeout: int = 30,
+    search_timeout: int = 120,
+    personalization_timeout: int = 30,
+    rag_timeout: int = 90,
+    retrieval_url: Optional[str] = None,
+    personalization_url: Optional[str] = None,
+    rag_url: Optional[str] = None,
+    log_query_event: bool = True,
+) -> Dict[str, Any]:
+    """Refine (optional) -> search -> personalize (optional) -> RAG generate (optional)."""
+    pipeline = search_with_personalization(
+        raw_query=raw_query,
+        representation_mode=representation_mode,
+        use_refinement=use_refinement,
+        use_personalization=use_personalization,
+        techniques=techniques,
+        user_id=user_id,
+        previous_queries=previous_queries,
+        k1=k1,
+        b=b,
+        top_n_filter=top_n_filter,
+        top_k=top_k,
+        alpha=alpha,
+        refine_timeout=refine_timeout,
+        search_timeout=search_timeout,
+        personalization_timeout=personalization_timeout,
+        retrieval_url=retrieval_url,
+        personalization_url=personalization_url,
+        log_query_event=log_query_event,
+    )
+
+    rag_meta = None
+    search_payload = pipeline["search"]
+
+    if (
+        use_rag
+        and search_payload.get("status") == "success"
+        and search_payload.get("results")
+    ):
+        rag_resp = requests.post(
+            rag_generate_url(rag_url),
+            json={
+                "query": raw_query,
+                "results": search_payload["results"],
+                "top_context_docs": (
+                    rag_top_context_docs
+                    if rag_top_context_docs is not None
+                    else RAG_TOP_CONTEXT_DOCS
+                ),
+                "max_context_chars": RAG_MAX_CONTEXT_CHARS,
+            },
+            timeout=rag_timeout,
+        )
+        rag_resp.raise_for_status()
+        rag_meta = rag_resp.json()
+
+    return {
+        "search": search_payload,
+        "refinement": pipeline["refinement"],
+        "personalization": pipeline["personalization"],
+        "rag": rag_meta,
     }

@@ -17,9 +17,11 @@ import ui.health as health_module
 _REQUIRED_IR_CONFIG_ATTRS = (
     "PERSONALIZATION_URL",
     "CLUSTERING_URL",
+    "RAG_URL",
     "clustering_health_url",
     "clustering_meta_url",
     "clustering_comparison_url",
+    "rag_health_url",
 )
 if any(not hasattr(ir_config, attr) for attr in _REQUIRED_IR_CONFIG_ATTRS):
     ir_config = importlib.reload(ir_config)
@@ -35,12 +37,14 @@ render_system_status = health_module.render_system_status
 HISTORY_MAX_QUERIES = ir_config.HISTORY_MAX_QUERIES
 PERSONALIZATION_URL = ir_config.PERSONALIZATION_URL
 CLUSTERING_URL = ir_config.CLUSTERING_URL
+RAG_URL = ir_config.RAG_URL
 REFINEMENT_URL = ir_config.REFINEMENT_URL
 RETRIEVAL_URL = ir_config.RETRIEVAL_URL
 suggest_url = ir_config.suggest_url
 
-from shared.search_pipeline import search_with_personalization
+from shared.search_pipeline import search_with_rag
 from ui.clustering import render_clustering_section
+from ui.rag_answer import render_rag_answer
 from ui.results import render_results
 from ui.search_input import render_search_input
 from ui.sidebar import render_sidebar
@@ -60,6 +64,7 @@ PERSONALIZATION_HEALTH_URL = f"{PERSONALIZATION_URL.rstrip('/')}/health"
 CLUSTERING_HEALTH_URL = ir_config.clustering_health_url()
 CLUSTERING_META_URL = ir_config.clustering_meta_url()
 CLUSTERING_COMPARISON_URL = ir_config.clustering_comparison_url()
+RAG_HEALTH_URL = ir_config.rag_health_url()
 SUGGEST_SERVICE_URL = suggest_url()
 
 _SESSION_DEFAULTS = {
@@ -68,7 +73,9 @@ _SESSION_DEFAULTS = {
     "last_search_data": None,
     "last_refinement_meta": None,
     "last_personalization_meta": None,
+    "last_rag_meta": None,
     "last_use_personalization": False,
+    "last_use_rag": False,
     "last_use_refinement": False,
     "last_personalization_user_id": None,
     "query": "",
@@ -99,17 +106,21 @@ system_status = fetch_system_status_cached(
     REFINEMENT_HEALTH_URL,
     PERSONALIZATION_HEALTH_URL,
     clustering_health_url=CLUSTERING_HEALTH_URL,
+    rag_health_url=RAG_HEALTH_URL,
 )
 
 settings = render_sidebar(
     personalization_url=PERSONALIZATION_URL,
     personalize_profile_url_fn=ir_config.personalize_profile_url,
+    rag_ready=system_status.get("rag_ok", False),
+    rag_gemini_configured=system_status.get("rag_gemini", False),
 )
 
 render_system_status(
     system_status,
     use_refinement=settings.use_refinement,
     use_personalization=settings.use_personalization,
+    use_rag=settings.use_rag,
     refinement_techniques=settings.refinement_techniques,
     search_history_len=len(st.session_state["search_history"]),
 )
@@ -126,13 +137,14 @@ if should_search:
                 if settings.use_refinement and "history" in settings.refinement_techniques:
                     previous_queries = list(st.session_state["search_history"])
 
-                pipeline_result = search_with_personalization(
+                pipeline_result = search_with_rag(
                     raw_query=query,
                     representation_mode=settings.representation_mode,
                     use_refinement=settings.use_refinement,
                     use_personalization=bool(
                         settings.use_personalization and settings.personalization_user_id
                     ),
+                    use_rag=settings.use_rag,
                     user_id=settings.personalization_user_id,
                     techniques=settings.refinement_techniques,
                     previous_queries=previous_queries,
@@ -140,10 +152,12 @@ if should_search:
                     b=settings.b,
                     top_n_filter=settings.top_n_filter,
                     top_k=settings.display_top_k,
+                    rag_top_context_docs=settings.rag_top_context_docs,
                 )
                 data = pipeline_result["search"]
                 refinement_meta = pipeline_result["refinement"]
                 personalization_meta = pipeline_result["personalization"]
+                rag_meta = pipeline_result["rag"]
 
                 if data["status"] == "success":
                     normalized_query = query.strip()
@@ -156,12 +170,14 @@ if should_search:
                     st.session_state["last_search_data"] = data
                     st.session_state["last_refinement_meta"] = refinement_meta
                     st.session_state["last_personalization_meta"] = personalization_meta
+                    st.session_state["last_rag_meta"] = rag_meta
                     st.session_state["last_search_results"] = data.get("results", {})
                     st.session_state["last_search_query"] = normalized_query
                     st.session_state["last_use_refinement"] = settings.use_refinement
                     st.session_state["last_use_personalization"] = bool(
                         settings.use_personalization and settings.personalization_user_id
                     )
+                    st.session_state["last_use_rag"] = settings.use_rag
                     st.session_state["last_personalization_user_id"] = (
                         settings.personalization_user_id
                     )
@@ -179,6 +195,8 @@ if should_search:
                         services += "، refinement (8003)"
                     if settings.use_personalization and settings.personalization_user_id:
                         services += "، personalization (8004)"
+                    if settings.use_rag:
+                        services += "، rag (8006)"
                     st.caption(f"الخدمات المطلوبة: {services}")
             except Exception as exc:
                 st.error(f"حدث خطأ أثناء البحث: {exc}")
@@ -187,6 +205,7 @@ last_data = st.session_state.get("last_search_data")
 if last_data and last_data.get("status") == "success":
     last_refinement = st.session_state.get("last_refinement_meta")
     last_personalization = st.session_state.get("last_personalization_meta")
+    last_rag = st.session_state.get("last_rag_meta")
     last_query = st.session_state.get("last_search_query", "")
     results = last_data.get("results", {})
     total_results = last_data.get("total_results", len(results))
@@ -206,9 +225,15 @@ if last_data and last_data.get("status") == "success":
         last_personalization,
         use_refinement=st.session_state.get("last_use_refinement", False),
         use_personalization=st.session_state.get("last_use_personalization", False),
+        rag_meta=last_rag,
+        use_rag=st.session_state.get("last_use_rag", False),
     )
 
     if total_results > 0:
+        render_rag_answer(
+            last_rag,
+            use_rag=st.session_state.get("last_use_rag", False),
+        )
         render_results(
             results,
             query=last_query,
@@ -218,7 +243,12 @@ if last_data and last_data.get("status") == "success":
             personalization_user_id=st.session_state.get("last_personalization_user_id"),
         )
 
-    render_technical_details(last_data, last_refinement, last_personalization)
+    render_technical_details(
+        last_data,
+        last_refinement,
+        last_personalization,
+        rag_meta=last_rag,
+    )
 
 st.markdown("---")
 render_clustering_section(
