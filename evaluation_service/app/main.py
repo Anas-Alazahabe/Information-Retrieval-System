@@ -1,16 +1,13 @@
 import json
 import os
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional
-import locale # أضيفي هذه
+import locale  # أضيفي هذه
 
 locale.getpreferredencoding = lambda *args, **kwargs: "utf-8"
-
-from datetime import datetime, timezone
-from pathlib import Path
-from typing import Dict, List, Optional
 
 import requests
 from fastapi import FastAPI, HTTPException
@@ -41,6 +38,55 @@ class EvaluateRequest(BaseModel):
     use_refinement: bool = False
     refinement_techniques: List[str] = Field(default_factory=lambda: list(DEFAULT_REFINEMENT_TECHNIQUES))
     refinement_url: str = REFINEMENT_URL
+
+
+def _fetch_search_payload(
+    *,
+    query_text: str,
+    mode: str,
+    top_k: int,
+    retrieval_url: str,
+    use_refinement: bool,
+    refinement_techniques: List[str],
+    max_attempts: int = 5,
+) -> Dict:
+    """Call retrieval (optionally via refinement) with retries on transient failures."""
+    last_exc: Optional[Exception] = None
+    for attempt in range(1, max_attempts + 1):
+        try:
+            if use_refinement:
+                pipeline_result = search_with_optional_refinement(
+                    raw_query=query_text,
+                    representation_mode=mode,
+                    use_refinement=True,
+                    techniques=refinement_techniques,
+                    previous_queries=[],
+                    top_k=top_k,
+                    retrieval_url=retrieval_url,
+                    search_timeout=120,
+                    refine_timeout=60,
+                )
+                return pipeline_result["search"]
+            response = requests.post(
+                f"{retrieval_url.rstrip('/')}/search",
+                json={
+                    "query": query_text,
+                    "representation_mode": mode,
+                    "top_k": top_k,
+                },
+                timeout=120,
+            )
+            response.raise_for_status()
+            return response.json()
+        except (requests.ConnectionError, requests.Timeout) as exc:
+            last_exc = exc
+        except requests.HTTPError as exc:
+            if exc.response is not None and exc.response.status_code not in (500, 502, 503, 504):
+                raise
+            last_exc = exc
+        if attempt < max_attempts:
+            time.sleep(min(30, 5 * attempt))
+    raise RuntimeError(f"Retrieval unavailable after {max_attempts} attempts: {last_exc}") from last_exc
 
 
 def _load_queries_and_qrels(dataset_name: str):
@@ -101,31 +147,14 @@ def run_evaluation(
                 continue
 
             try:
-                if use_refinement:
-                    pipeline_result = search_with_optional_refinement(
-                        raw_query=query_text,
-                        representation_mode=mode,
-                        use_refinement=True,
-                        techniques=refinement_techniques,
-                        previous_queries=[],
-                        top_k=top_k,
-                        retrieval_url=retrieval_url,
-                        search_timeout=120,
-                        refine_timeout=60,
-                    )
-                    payload = pipeline_result["search"]
-                else:
-                    response = requests.post(
-                        f"{retrieval_url.rstrip('/')}/search",
-                        json={
-                            "query": query_text,
-                            "representation_mode": mode,
-                            "top_k": top_k,
-                        },
-                        timeout=120,
-                    )
-                    response.raise_for_status()
-                    payload = response.json()
+                payload = _fetch_search_payload(
+                    query_text=query_text,
+                    mode=mode,
+                    top_k=top_k,
+                    retrieval_url=retrieval_url,
+                    use_refinement=use_refinement,
+                    refinement_techniques=refinement_techniques,
+                )
             except Exception as exc:
                 raise RuntimeError(
                     f"Retrieval failed for query {query_id} mode {mode}: {exc}"

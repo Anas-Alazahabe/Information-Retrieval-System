@@ -32,6 +32,9 @@ Thumbs.db
 # Streamlit secrets (keep config)
 .streamlit/secrets.toml
 
+# Local environment (credentials)
+.env
+
 # Archives and raw dataset dumps
 *.zip
 *.tsv

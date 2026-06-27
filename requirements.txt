@@ -10,3 +10,6 @@ faiss-cpu
 pytest
 streamlit
 streamlit-keyup
+mysql-connector-python
+scikit-learn
+matplotlib

@@ -15,6 +15,8 @@ INDEX_DIR = os.environ.get("IR_INDEX_DIR", str(PROJECT_ROOT / "index_data"))
 PREPROCESS_URL = os.environ.get("IR_PREPROCESS_URL", "http://127.0.0.1:8000")
 RETRIEVAL_URL = os.environ.get("IR_RETRIEVAL_URL", "http://127.0.0.1:8002")
 REFINEMENT_URL = os.environ.get("IR_REFINEMENT_URL", "http://127.0.0.1:8003")
+PERSONALIZATION_URL = os.environ.get("IR_PERSONALIZATION_URL", "http://127.0.0.1:8004")
+CLUSTERING_URL = os.environ.get("IR_CLUSTERING_URL", "http://127.0.0.1:8005")
 DATASET_NAME = os.environ.get("IR_DATASET", "msmarco-passage")
 EVAL_DATASET_NAME = os.environ.get("IR_EVAL_DATASET", "msmarco-passage/dev")
 # EMBEDDING_MODEL = os.environ.get("IR_EMBEDDING_MODEL", "all-MiniLM-L6-v2")
@@ -102,6 +104,28 @@ SUGGEST_MIN_PREFIX_LEN = int(os.environ.get("IR_SUGGEST_MIN_PREFIX_LEN", "2"))
 HISTORY_MAX_QUERIES = int(os.environ.get("IR_HISTORY_MAX_QUERIES", "5"))
 HISTORY_MAX_TERMS = int(os.environ.get("IR_HISTORY_MAX_TERMS", "5"))
 
+PERSONALIZATION_ALPHA = float(os.environ.get("IR_PERSONALIZATION_ALPHA", "0.7"))
+PERSONALIZATION_RERANK_POOL = int(os.environ.get("IR_PERSONALIZATION_RERANK_POOL", "100"))
+CLICK_EVENT_WEIGHT = float(os.environ.get("IR_CLICK_EVENT_WEIGHT", "2.0"))
+QUERY_EVENT_WEIGHT = float(os.environ.get("IR_QUERY_EVENT_WEIGHT", "1.0"))
+PROFILE_MAX_QUERIES = int(os.environ.get("IR_PROFILE_MAX_QUERIES", "20"))
+PROFILE_MAX_CLICKS = int(os.environ.get("IR_PROFILE_MAX_CLICKS", "30"))
+PROFILE_TOP_TERMS = int(os.environ.get("IR_PROFILE_TOP_TERMS", "25"))
+
+CLUSTER_NUM_CLUSTERS_MAX = int(os.environ.get("IR_CLUSTER_MAX_K", "10"))
+CLUSTER_VIZ_MAX_POINTS = int(os.environ.get("IR_CLUSTER_VIZ_MAX", "5000"))
+CLUSTER_MINIBATCH_THRESHOLD = int(os.environ.get("IR_CLUSTER_MINIBATCH_THRESHOLD", "10000"))
+
+CLUSTER_ARTIFACT_FILES = (
+    "cluster_model.pkl",
+    "all_labels.npy",
+    "cluster_doc_ids.json",
+    "cluster_manifest.json",
+    "tsne_coords.npy",
+    "tsne_labels.npy",
+    "tsne_doc_ids.json",
+)
+
 ARTIFACT_FILES = (
     "vsm_index.json",
     "bm25_index.json",
@@ -162,3 +186,45 @@ def refine_url() -> str:
 def suggest_url() -> str:
     """يبني رابط endpoint الخاص باقتراحات الاستعلام."""
     return f"{REFINEMENT_URL.rstrip('/')}/suggest"
+
+
+def personalize_rerank_url(base_url: Optional[str] = None) -> str:
+    """Build URL for personalized result re-ranking."""
+    root = (base_url or PERSONALIZATION_URL).rstrip("/")
+    return f"{root}/personalize/rerank"
+
+
+def personalize_profile_url(user_id: str, base_url: Optional[str] = None) -> str:
+    """Build URL for fetching a user profile."""
+    root = (base_url or PERSONALIZATION_URL).rstrip("/")
+    return f"{root}/profile/{user_id}"
+
+
+def personalize_query_event_url(base_url: Optional[str] = None) -> str:
+    """Build URL for logging query events."""
+    root = (base_url or PERSONALIZATION_URL).rstrip("/")
+    return f"{root}/events/query"
+
+
+def personalize_click_event_url(base_url: Optional[str] = None) -> str:
+    """Build URL for logging click events."""
+    root = (base_url or PERSONALIZATION_URL).rstrip("/")
+    return f"{root}/events/click"
+
+
+def clustering_health_url(base_url: Optional[str] = None) -> str:
+    """Build URL for clustering service health check."""
+    root = (base_url or CLUSTERING_URL).rstrip("/")
+    return f"{root}/health"
+
+
+def clustering_meta_url(base_url: Optional[str] = None) -> str:
+    """Build URL for clustering metadata."""
+    root = (base_url or CLUSTERING_URL).rstrip("/")
+    return f"{root}/cluster/meta"
+
+
+def clustering_comparison_url(base_url: Optional[str] = None) -> str:
+    """Build URL for cluster visualization PNG."""
+    root = (base_url or CLUSTERING_URL).rstrip("/")
+    return f"{root}/cluster/comparison"

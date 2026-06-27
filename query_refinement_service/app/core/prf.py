@@ -1,6 +1,7 @@
 """Pseudo-relevance feedback (simplified RM3) using BM25 first-pass retrieval."""
 
 import logging
+import os
 import re
 from collections import Counter
 from typing import Dict, List, Tuple
@@ -19,6 +20,44 @@ from shared.ir_config import (
 logger = logging.getLogger(__name__)
 
 PRF_TIMEOUT_SECONDS = 10
+
+# Loading bm25_index.json on every /refine call OOMs at 200K scale; cache per process.
+_BM25_FEEDBACK_CACHE: Dict[str, Dict] = {}
+
+
+def _get_bm25_feedback_data(index_dir: str) -> Tuple[Dict, Dict]:
+    """Load BM25 postings and doc lengths once, reusing cache when index files are unchanged."""
+    bm25_path = os.path.join(index_dir, "bm25_index.json")
+    meta_path = os.path.join(index_dir, "metadata.json")
+    if not os.path.exists(bm25_path):
+        return {}, {}
+
+    bm25_mtime = os.path.getmtime(bm25_path)
+    meta_mtime = os.path.getmtime(meta_path) if os.path.exists(meta_path) else 0.0
+    cache_key_mtime = max(bm25_mtime, meta_mtime)
+
+    cached = _BM25_FEEDBACK_CACHE.get(index_dir)
+    if cached and cached.get("mtime") == cache_key_mtime:
+        return cached["bm25_index"], cached["doc_lengths"]
+
+    store = JsonIndexStore(index_dir)
+    try:
+        bm25_index = store.load_bm25()
+        metadata = store.load_metadata()
+    except MemoryError:
+        logger.warning("PRF skipped: BM25 index too large to load into memory")
+        return {}, {}
+    except OSError as exc:
+        logger.warning("PRF skipped: could not read BM25 index: %s", exc)
+        return {}, {}
+
+    doc_lengths = metadata.get("doc_lengths", {})
+    _BM25_FEEDBACK_CACHE[index_dir] = {
+        "mtime": cache_key_mtime,
+        "bm25_index": bm25_index,
+        "doc_lengths": doc_lengths,
+    }
+    return bm25_index, doc_lengths
 SHORT_QUERY_MAX_TERMS = 5
 _VALID_FEEDBACK_TERM = re.compile(r"^[a-z][a-z0-9-]*$")
 
@@ -129,13 +168,9 @@ def prf_rm3(
     if not feedback_docs:
         return [], "PRF skipped: no first-pass results."
 
-    store = JsonIndexStore(index_dir)
-    bm25_index = store.load_bm25()
+    bm25_index, doc_lengths = _get_bm25_feedback_data(index_dir)
     if not bm25_index:
         return [], "PRF skipped: BM25 index not available."
-
-    metadata = store.load_metadata()
-    doc_lengths = metadata.get("doc_lengths", {})
 
     ranked, filtered_count = _score_feedback_terms(
         feedback_docs, bm25_index, query_tokens, doc_lengths
