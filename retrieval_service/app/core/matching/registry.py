@@ -54,6 +54,8 @@ def default_match_params(
     b: float = 0.75,
     top_n_filter: Optional[int] = None,
     k_rrf: Optional[int] = None,
+    bm25_rrf_weight: float = 1.0,
+    embedding_rrf_weight: float = 1.0,
     top_k: Optional[int] = None,
 ) -> MatchParams:
     return MatchParams(
@@ -61,6 +63,8 @@ def default_match_params(
         b=b,
         top_n_filter=top_n_filter if top_n_filter is not None else SERIAL_HYBRID_TOP_N,
         k_rrf=k_rrf if k_rrf is not None else RRF_K,
+        bm25_rrf_weight=bm25_rrf_weight,
+        embedding_rrf_weight=embedding_rrf_weight,
         top_k=top_k,
     )
 

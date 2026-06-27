@@ -7,6 +7,8 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import requests
 
+from shared.index_json_io import write_json_artifact
+
 from shared.ir_config import (
     ARTIFACT_FILES,
     DATASET_NAME,
@@ -230,17 +232,10 @@ class IndexBuilder:
 
         final_vsm_index, final_bm25_index, metadata, _ = self._compute_indices()
 
-        with open(os.path.join(index_dir, "vsm_index.json"), "w", encoding="utf-8") as f:
-            json.dump(final_vsm_index, f, ensure_ascii=False)
-
-        with open(os.path.join(index_dir, "bm25_index.json"), "w", encoding="utf-8") as f:
-            json.dump(final_bm25_index, f, ensure_ascii=False)
-
-        with open(os.path.join(index_dir, "embeddings_index.json"), "w", encoding="utf-8") as f:
-            json.dump(self.doc_embeddings, f)
-
-        with open(os.path.join(index_dir, "metadata.json"), "w", encoding="utf-8") as f:
-            json.dump(metadata, f, ensure_ascii=False)
+        write_json_artifact(index_dir, "vsm_index.json", final_vsm_index)
+        write_json_artifact(index_dir, "bm25_index.json", final_bm25_index)
+        write_json_artifact(index_dir, "embeddings_index.json", self.doc_embeddings)
+        write_json_artifact(index_dir, "metadata.json", metadata)
 
         ann_info = self._build_faiss_index(index_dir)
 

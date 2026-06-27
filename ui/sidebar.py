@@ -7,6 +7,7 @@ import requests
 import streamlit as st
 
 from ui.constants import (
+    DEFAULT_DISPLAY_TOP_K,
     DEFAULT_PERSONALIZATION_USER,
     DEFAULT_REFINEMENT_PRESET,
     DEFAULT_RETRIEVAL_MODE,
@@ -30,6 +31,8 @@ from ui.constants import (
     SERIAL_HYBRID_TOP_N,
 )
 
+import shared.ir_config as ir_config
+
 
 @dataclass
 class SearchSettings:
@@ -38,12 +41,16 @@ class SearchSettings:
     refinement_techniques: List[str]
     use_personalization: bool
     personalization_user_id: Optional[str]
+    personalization_alpha: float
     use_rag: bool
     rag_top_context_docs: int
     k1: float
     b: float
     top_n_filter: int
     display_top_k: int
+    k_rrf: int
+    bm25_rrf_weight: float
+    embedding_rrf_weight: float
 
 
 def _fetch_user_profile(profile_url: str) -> dict:
@@ -191,6 +198,16 @@ def render_sidebar(
                 f"نقرات: {profile.get('click_count', 0)}"
             )
 
+        personalization_alpha = st.sidebar.slider(
+            "وزن التخصيص (alpha)",
+            min_value=0.0,
+            max_value=1.0,
+            value=float(ir_config.PERSONALIZATION_ALPHA),
+            step=0.05,
+            help="0 = ترتيب الاسترجاع فقط، 1 = أقصى تأثير لملف الاهتمام",
+        )
+    else:
+        personalization_alpha = float(ir_config.PERSONALIZATION_ALPHA)
     st.sidebar.markdown("---")
     st.sidebar.markdown(RAG_SECTION, unsafe_allow_html=True)
 
@@ -217,12 +234,18 @@ def render_sidebar(
         )
 
     st.sidebar.markdown("---")
+    k1 = 1.5
+    b = 0.75
+    top_n_filter = SERIAL_HYBRID_TOP_N
+    display_top_k = DEFAULT_DISPLAY_TOP_K
+    k_rrf = int(ir_config.RRF_K)
+    bm25_rrf_weight = 1.0
+    embedding_rrf_weight = 1.0
+
     with st.sidebar.expander("إعدادات متقدمة", expanded=False):
         st.caption("ماذا يفعل هذا؟ ضبط دقيق لخبراء IR والعرض الأكاديمي.")
         st.caption("لماذا؟ للتجارب المتقدمة — الافتراضيات مناسبة للعرض التوضيحي.")
 
-        k1 = 1.5
-        b = 0.75
         if representation_mode in ("bm25", "hybrid_parallel", "hybrid_serial"):
             k1 = st.slider(
                 "BM25 k1 (term frequency scaling)",
@@ -239,7 +262,6 @@ def render_sidebar(
                 step=0.05,
             )
 
-        top_n_filter = SERIAL_HYBRID_TOP_N
         if representation_mode == "hybrid_serial":
             top_n_filter = st.slider(
                 "عدد مرشحي BM25 لإعادة الترتيب (serial hybrid)",
@@ -249,11 +271,35 @@ def render_sidebar(
                 step=10,
             )
 
+        if representation_mode == "hybrid_parallel":
+            k_rrf = st.slider(
+                "ثابت دمج RRF (k_rrf)",
+                min_value=10,
+                max_value=100,
+                value=int(ir_config.RRF_K),
+                step=5,
+                help="كلما زاد k_rrf قلّ تأثير الفرق بين الرتب العالية",
+            )
+            bm25_rrf_weight = st.slider(
+                "وزن BM25 في الدمج الهجين",
+                min_value=0.1,
+                max_value=3.0,
+                value=1.0,
+                step=0.1,
+            )
+            embedding_rrf_weight = st.slider(
+                "وزن Embedding في الدمج الهجين",
+                min_value=0.1,
+                max_value=3.0,
+                value=1.0,
+                step=0.1,
+            )
+
         display_top_k = st.slider(
             "عدد النتائج المعروضة (top_k)",
             min_value=5,
             max_value=100,
-            value=20,
+            value=DEFAULT_DISPLAY_TOP_K,
             step=5,
         )
 
@@ -263,10 +309,14 @@ def render_sidebar(
         refinement_techniques=refinement_techniques,
         use_personalization=use_personalization,
         personalization_user_id=personalization_user_id,
+        personalization_alpha=personalization_alpha,
         use_rag=use_rag,
         rag_top_context_docs=rag_top_context_docs,
         k1=k1,
         b=b,
         top_n_filter=top_n_filter,
         display_top_k=display_top_k,
+        k_rrf=k_rrf,
+        bm25_rrf_weight=bm25_rrf_weight,
+        embedding_rrf_weight=embedding_rrf_weight,
     )

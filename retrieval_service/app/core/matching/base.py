@@ -26,6 +26,8 @@ class MatchParams:
     b: float = 0.75
     top_n_filter: int = 100
     k_rrf: int = 60
+    bm25_rrf_weight: float = 1.0
+    embedding_rrf_weight: float = 1.0
     top_k: Optional[int] = None
 
 

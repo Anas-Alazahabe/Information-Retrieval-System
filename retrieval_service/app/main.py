@@ -64,6 +64,8 @@ class SearchRequest(BaseModel):
     top_n_filter: Optional[int] = SERIAL_HYBRID_TOP_N
     top_k: Optional[int] = None
     k_rrf: Optional[int] = RRF_K
+    bm25_rrf_weight: Optional[float] = 1.0
+    embedding_rrf_weight: Optional[float] = 1.0
     preserve_wh_words: Optional[bool] = None
 
 
@@ -90,12 +92,19 @@ def _reload_indexes_if_changed():
 
 @app.on_event("startup")
 def startup_load_indexes():
-    """تحميل الفهارس عند بدء الخدمة لتحسين زمن أول استعلام."""
+    """تحميل الفهارس ونموذج التضمين عند بدء الخدمة لتحسين زمن أول استعلام."""
     global _index_mtime
     if index_store.index_ready():
         bm25_engine.reload()
         embedding_engine.reload()
         _index_mtime = index_store.get_index_mtime()
+        try:
+            embedding_engine._lazy_load_model()
+            if embedding_engine.model is not None:
+                embedding_engine.model.encode(["warmup"], show_progress_bar=False)
+            logger.info("Embedding model warmed up at startup")
+        except Exception as exc:
+            logger.warning("Embedding warm-up skipped: %s", exc)
         logger.info("Loaded indexes from %s at startup", INDEX_DIR)
     else:
         logger.warning("Index not ready at startup: %s", INDEX_DIR)
@@ -168,6 +177,8 @@ def execute_search(request: SearchRequest):
         b=request.b or 0.75,
         top_n_filter=request.top_n_filter,
         k_rrf=request.k_rrf,
+        bm25_rrf_weight=request.bm25_rrf_weight or 1.0,
+        embedding_rrf_weight=request.embedding_rrf_weight or 1.0,
         top_k=request.top_k,
     )
 
@@ -203,6 +214,8 @@ def execute_search(request: SearchRequest):
             "b": params.b,
             "top_n_filter": params.top_n_filter,
             "k_rrf": params.k_rrf,
+            "bm25_rrf_weight": params.bm25_rrf_weight,
+            "embedding_rrf_weight": params.embedding_rrf_weight,
         },
         "query_tokens": query_tokens,
         "embedding_model": manifest.get("embedding_model", EMBEDDING_MODEL),

@@ -95,8 +95,8 @@ inject_styles()
 
 st.title("محرك البحث الأكاديمي المطور")
 st.markdown(
-    "<p class='welcome-subtitle'>ابحث في ملايين المقاطع، حسّن استعلامك، "
-    "وخصّص النتائج حسب اهتماماتك — دون الحاجة لقراءة الوثائق التقنية.</p>",
+    "<p class='welcome-subtitle'>ابحث في المقاطع المفهرسة، حسّن استعلامك، "
+    "وخصّص النتائج حسب اهتماماتك.</p>",
     unsafe_allow_html=True,
 )
 st.markdown("---")
@@ -152,6 +152,10 @@ if should_search:
                     b=settings.b,
                     top_n_filter=settings.top_n_filter,
                     top_k=settings.display_top_k,
+                    k_rrf=settings.k_rrf,
+                    bm25_rrf_weight=settings.bm25_rrf_weight,
+                    embedding_rrf_weight=settings.embedding_rrf_weight,
+                    alpha=settings.personalization_alpha,
                     rag_top_context_docs=settings.rag_top_context_docs,
                 )
                 data = pipeline_result["search"]

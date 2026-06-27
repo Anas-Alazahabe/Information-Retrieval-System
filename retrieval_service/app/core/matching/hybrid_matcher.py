@@ -42,8 +42,12 @@ class HybridParallelMatcher:
         for doc_id in all_docs:
             rank_bm25 = bm25_ranks.get(doc_id)
             rank_emb = emb_ranks.get(doc_id)
-            score_bm25 = 1.0 / (k_rrf + rank_bm25) if rank_bm25 else 0.0
-            score_emb = 1.0 / (k_rrf + rank_emb) if rank_emb else 0.0
+            score_bm25 = (
+                params.bm25_rrf_weight / (k_rrf + rank_bm25) if rank_bm25 else 0.0
+            )
+            score_emb = (
+                params.embedding_rrf_weight / (k_rrf + rank_emb) if rank_emb else 0.0
+            )
             rrf_scores[doc_id] = round(score_bm25 + score_emb, 6)
 
         sorted_scores = dict(

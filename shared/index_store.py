@@ -4,10 +4,10 @@
 بحيث يمكن استبدال JSON بمخزن آخر مستقبلًا.
 """
 
-import json
 import os
 from typing import Any, Dict, Protocol, runtime_checkable
 
+from shared.index_json_io import artifact_exists, artifact_paths, read_json_artifact
 from shared.ir_config import ARTIFACT_FILES, INDEX_DIR
 
 
@@ -32,12 +32,8 @@ class JsonIndexStore:
         self.index_dir = index_dir
 
     def _read_json(self, filename: str) -> Dict[str, Any]:
-        """يقرأ ملف JSON ويعيد محتواه أو قاموسًا فارغًا عند عدم وجوده."""
-        path = os.path.join(self.index_dir, filename)
-        if not os.path.exists(path):
-            return {}
-        with open(path, "r", encoding="utf-8") as f:
-            return json.load(f)
+        """يقرأ ملف JSON (أو .json.gz) ويعيد محتواه أو قاموسًا فارغًا."""
+        return read_json_artifact(self.index_dir, filename)
 
     def load_metadata(self) -> Dict[str, Any]:
         """يحمّل بيانات الميتاداتا الخاصة بالفهرس."""
@@ -60,17 +56,24 @@ class JsonIndexStore:
         return self._read_json("index_manifest.json")
 
     def index_ready(self) -> bool:
-        """يتحقق من جاهزية ملفات الفهرسة الأساسية."""
-        return all(
-            os.path.exists(os.path.join(self.index_dir, name))
-            for name in ("metadata.json", "vsm_index.json", "bm25_index.json", "embeddings_index.json")
+        """يتحقق من جاهزية ملفات الفهرسة الأساسية (عادي أو مضغوط)."""
+        required = ("metadata.json", "vsm_index.json", "bm25_index.json")
+        if not all(artifact_exists(self.index_dir, name) for name in required):
+            return False
+        has_embeddings = artifact_exists(self.index_dir, "embeddings_index.json")
+        has_faiss = os.path.exists(
+            os.path.join(self.index_dir, "embeddings.faiss")
+        ) and os.path.exists(
+            os.path.join(self.index_dir, "embeddings_id_map.json")
         )
+        return has_embeddings or has_faiss
 
     def get_index_mtime(self) -> float:
         """يعيد أحدث وقت تعديل بين ملفات الفهرسة."""
         mtimes = []
         for name in ARTIFACT_FILES:
-            path = os.path.join(self.index_dir, name)
-            if os.path.exists(path):
-                mtimes.append(os.path.getmtime(path))
+            plain, gz = artifact_paths(self.index_dir, name)
+            for path in (plain, gz):
+                if os.path.exists(path):
+                    mtimes.append(os.path.getmtime(path))
         return max(mtimes) if mtimes else 0.0

@@ -83,14 +83,22 @@ class EmbeddingSearchEngine:
         self._load_from_store()
 
     def _load_from_store(self):
-        """تحميل embeddings من التخزين."""
-        self.doc_embeddings = self.store.load_embeddings()
+        """تحميل embeddings من التخزين (FAISS فقط عند الحجم الكبير)."""
+        self.doc_embeddings = {}
         self.faiss_index = None
         self.faiss_id_map = []
         self._numpy_matrix = None
         self._numpy_doc_ids = []
         self._load_faiss_index()
+        if self.faiss_index is not None and self.faiss_id_map:
+            # At scale, vectors live in FAISS — avoid loading multi-GB JSON into RAM.
+            pass
+        else:
+            self.doc_embeddings = self.store.load_embeddings()
         self._maybe_build_numpy_matrix()
+
+    def has_embeddings(self) -> bool:
+        return bool(self.doc_embeddings) or self.faiss_index is not None
 
     def reload(self):
         """إعادة تحميل embeddings من التخزين."""
@@ -225,6 +233,33 @@ class EmbeddingSearchEngine:
                 doc_scores[self.faiss_id_map[idx]] = round(float(score), 4)
         return dict(sorted(doc_scores.items(), key=lambda item: item[1], reverse=True))
 
+    def _score_faiss_candidates(
+        self, query_vector: list, doc_ids: list
+    ) -> Dict[str, float]:
+        import numpy as np
+
+        id_to_idx = {doc_id: i for i, doc_id in enumerate(self.faiss_id_map)}
+        q = np.array(query_vector, dtype=np.float32)
+        norm = np.linalg.norm(q)
+        if norm == 0:
+            return {}
+        q = q / norm
+
+        doc_scores = {}
+        for doc_id in doc_ids:
+            idx = id_to_idx.get(doc_id)
+            if idx is None:
+                continue
+            vec = self.faiss_index.reconstruct(int(idx))
+            vec = np.array(vec, dtype=np.float32)
+            vnorm = np.linalg.norm(vec)
+            if vnorm == 0:
+                continue
+            score = float(np.dot(q, vec / vnorm))
+            if score > 0:
+                doc_scores[doc_id] = round(score, 4)
+        return dict(sorted(doc_scores.items(), key=lambda item: item[1], reverse=True))
+
     def _score_vectors(
         self,
         query_vector: list,
@@ -232,6 +267,8 @@ class EmbeddingSearchEngine:
         top_k: Optional[int] = None,
     ) -> Dict[str, float]:
         if doc_ids is not None:
+            if self.faiss_index is not None and self.faiss_id_map:
+                return self._score_faiss_candidates(query_vector, doc_ids)
             if self._numpy_matrix is not None and EMBEDDING_BACKEND == "numpy":
                 return self._score_numpy(query_vector, doc_ids=doc_ids)
             return self._score_loop(query_vector, doc_ids=doc_ids)
@@ -246,7 +283,7 @@ class EmbeddingSearchEngine:
 
     def search(self, query_text: str, doc_ids: Optional[list] = None) -> dict:
         """استرجاع دلالي على كل الوثائق أو على قائمة مرشحين فقط."""
-        if not query_text.strip() or not self.doc_embeddings:
+        if not query_text.strip() or not self.has_embeddings():
             return {}
 
         self._lazy_load_model()

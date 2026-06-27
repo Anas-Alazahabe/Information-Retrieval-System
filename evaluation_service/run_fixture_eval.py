@@ -1,4 +1,8 @@
-"""Offline evaluation against the local fixture index (no HTTP / no msmarco download)."""
+"""Offline evaluation against the local fixture index (no HTTP / no msmarco download).
+
+WARNING: Demo only — uses 3 hand-made queries. Do NOT use for grading;
+official metrics come from msmarco-passage/dev via evaluation_service/app/main.py.
+"""
 
 import json
 import sys

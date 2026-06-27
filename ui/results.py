@@ -1,4 +1,4 @@
-"""Result cards with passage snippets, personalization badges, and click logging."""
+"""Result cards with full document content, personalization badges, and click logging."""
 
 import html
 import re
@@ -67,12 +67,20 @@ def render_results(
 
     st.markdown("### النتائج")
     st.caption(
-        "مرتبة حسب درجة الصلة. اقرأ المقتطف لتحكم بالنتيجة — "
-        "لا تعتمد على رقم الوثيقة فقط."
+        "مرتبة حسب درجة الصلة. معرّف الوثيقة والنص الأصلي الكامل من قاعدة البيانات."
     )
 
     doc_ids = list(results.keys())
     doc_texts = fetch_document_texts(doc_ids)
+    found_count = sum(1 for doc_id in doc_ids if doc_texts.get(doc_id))
+    st.caption(f"تغطية قاعدة البيانات: {found_count}/{len(doc_ids)} وثيقة")
+
+    use_short_snippet = st.checkbox(
+        "عرض مقتطف قصير بدلاً من النص الكامل",
+        value=False,
+        key="results_short_snippet",
+    )
+
     boosted_lookup = _build_boosted_lookup(personalization_meta)
     profile_terms = (personalization_meta or {}).get("profile_terms_used") or []
 
@@ -83,7 +91,6 @@ def render_results(
 
     for rank, (doc_id, score) in enumerate(results.items(), 1):
         content = doc_texts.get(doc_id, "")
-        snippet = _truncate_snippet(content) if content else ""
         boost_info = boosted_lookup.get(doc_id)
         matched = _matched_profile_terms(content, profile_terms) if boost_info else []
 
@@ -97,11 +104,18 @@ def render_results(
                 f"(+{delta}) · Personalized re-rank</span>"
             )
 
-        snippet_html = (
-            _highlight_terms(snippet, query_terms)
-            if snippet
-            else "<em>نص الوثيقة غير متوفر في قاعدة البيانات</em>"
-        )
+        if content:
+            display_text = (
+                _truncate_snippet(content) if use_short_snippet else content
+            )
+            body_html = _highlight_terms(display_text, query_terms)
+            if not use_short_snippet and len(content) > SNIPPET_MAX_LEN:
+                char_note = f" ({len(content):,} حرف)"
+            else:
+                char_note = ""
+        else:
+            body_html = "<em>نص الوثيقة غير متوفر في قاعدة البيانات</em>"
+            char_note = ""
 
         matched_html = ""
         if matched:
@@ -110,8 +124,12 @@ def render_results(
                 f"{html.escape(', '.join(matched[:6]))}</div>"
             )
 
-        st.markdown(
-            f"""
+        with st.expander(
+            f"#{rank} · {doc_id[:48]}{'…' if len(doc_id) > 48 else ''} · درجة {score:.4f}{char_note}",
+            expanded=rank <= 3,
+        ):
+            st.markdown(
+                f"""
 <div class="result-card">
   <div class="result-card-header">
     <div>
@@ -120,29 +138,32 @@ def render_results(
     </div>
     <span class="score-badge">درجة الصلة: {score:.4f}</span>
   </div>
-  <div class="doc-id">{html.escape(doc_id)}</div>
-  <div class="snippet-text">{snippet_html}</div>
+  <div class="doc-id"><strong>معرّف الوثيقة:</strong> {html.escape(doc_id)}</div>
+  <div class="snippet-text">{body_html}</div>
   {matched_html}
 </div>
-            """,
-            unsafe_allow_html=True,
-        )
+                """,
+                unsafe_allow_html=True,
+            )
 
-        if use_personalization and personalization_user_id:
-            if st.button(
-                CLICK_BUTTON_LABEL,
-                key=f"click_{doc_id}_{rank}",
-                help=CLICK_BUTTON_HELP,
-            ):
-                ok = log_personalization_click_event(
-                    personalization_user_id,
-                    doc_id,
-                    query.strip(),
-                )
-                if ok:
-                    st.toast(
-                        "تم تحديث اهتماماتك — ستؤثر على عمليات البحث القادمة",
-                        icon="✅",
+            if use_personalization and personalization_user_id:
+                if st.button(
+                    CLICK_BUTTON_LABEL,
+                    key=f"click_{doc_id}_{rank}",
+                    help=CLICK_BUTTON_HELP,
+                ):
+                    ok = log_personalization_click_event(
+                        personalization_user_id,
+                        doc_id,
+                        query.strip(),
                     )
-                else:
-                    st.toast("تعذّر تحديث الاهتمامات — تحقق من خدمة التخصيص", icon="⚠️")
+                    if ok:
+                        st.toast(
+                            "تم تحديث اهتماماتك — ستؤثر على عمليات البحث القادمة",
+                            icon="✅",
+                        )
+                    else:
+                        st.toast(
+                            "تعذّر تحديث الاهتمامات — تحقق من خدمة التخصيص",
+                            icon="⚠️",
+                        )

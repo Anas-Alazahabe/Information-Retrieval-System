@@ -29,7 +29,7 @@ class EmbeddingMatcher:
         if not query.raw_text.strip():
             return MatchResult(scores={}, match_ms=0.0, empty_reason="empty_query")
 
-        if not self.engine.doc_embeddings:
+        if not self.engine.has_embeddings():
             return MatchResult(
                 scores={},
                 match_ms=round((time.perf_counter() - t0) * 1000, 2),
