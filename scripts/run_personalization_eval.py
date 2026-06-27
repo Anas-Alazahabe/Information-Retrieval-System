@@ -15,6 +15,7 @@ sys.path.insert(0, str(ROOT))
 
 os.environ.setdefault("PYTHONUTF8", "1")
 
+from evaluation_service.app.eval_queries import build_eval_protocol, load_queries_and_qrels, select_eval_queries
 from evaluation_service.app.metrics import aggregate_metrics, evaluate_ranked_list
 from shared.ir_config import (
     EVAL_DATASET_NAME,
@@ -22,7 +23,6 @@ from shared.ir_config import (
     PERSONALIZATION_URL,
     RETRIEVAL_URL,
 )
-from shared.ir_datasets_patch import patch_ir_datasets_tsv_utf8
 from shared.search_pipeline import log_personalization_query_event
 
 HEALTH_KEYWORDS = frozenset(
@@ -35,30 +35,23 @@ TECH_KEYWORDS = frozenset(
 SYNTHETIC_USERS = {
     "sim_health": HEALTH_KEYWORDS,
     "sim_tech": TECH_KEYWORDS,
+    "sim_general": frozenset(),
 }
 
 METRIC_KEYS = ("map", "recall", "precision_at_10", "ndcg_at_10")
 
 
 def _load_queries_and_qrels(dataset_name: str):
-    patch_ir_datasets_tsv_utf8()
-    import ir_datasets
-
-    dataset = ir_datasets.load(dataset_name)
-    queries = {q.query_id: q.text for q in dataset.queries_iter()}
-    qrels_map: Dict[str, Dict[str, int]] = {}
-    for qrel in dataset.qrels_iter():
-        qrels_map.setdefault(qrel.query_id, {})[qrel.doc_id] = qrel.relevance
-    return queries, qrels_map
+    return load_queries_and_qrels(dataset_name)
 
 
-def _bucket_query(text: str) -> Optional[str]:
+def _assign_user(text: str) -> str:
     tokens = set(text.lower().split())
     if tokens & HEALTH_KEYWORDS:
         return "sim_health"
     if tokens & TECH_KEYWORDS:
         return "sim_tech"
-    return None
+    return "sim_general"
 
 
 def _bucket_queries(
@@ -66,9 +59,7 @@ def _bucket_queries(
 ) -> Dict[str, List[Tuple[str, str]]]:
     buckets: Dict[str, List[Tuple[str, str]]] = {name: [] for name in SYNTHETIC_USERS}
     for query_id, text in query_items:
-        bucket = _bucket_query(text)
-        if bucket:
-            buckets[bucket].append((query_id, text))
+        buckets[_assign_user(text)].append((query_id, text))
     return buckets
 
 
@@ -200,27 +191,63 @@ def _evaluate_mode_personalized(
     return aggregate_metrics(per_query)
 
 
+def _check_retrieval_health(retrieval_url: str) -> None:
+    response = requests.get(f"{retrieval_url.rstrip('/')}/health", timeout=10)
+    response.raise_for_status()
+    health = response.json()
+    if not health.get("index_files_detected"):
+        raise RuntimeError(
+            "Retrieval index not ready. Build index and start retrieval_service first."
+        )
+
+
+def _assert_nonzero_baseline(
+    report: Dict,
+    modes: List[str],
+    *,
+    min_map: float = 1e-6,
+) -> None:
+    for mode in modes:
+        metrics = report["baseline"]["modes"].get(mode, {})
+        if metrics.get("map", 0.0) <= min_map:
+            raise RuntimeError(
+                f"Baseline MAP for mode '{mode}' is {metrics.get('map', 0.0)}. "
+                "Check that retrieval is running with the same index scale as baseline eval."
+            )
+
+
 def run_personalization_evaluation(
     *,
     dataset_name: str = EVAL_DATASET_NAME,
     modes: List[str],
     top_k: int = 10,
-    max_queries_per_user: int = 50,
+    max_queries: int = 50,
     warmup_queries: int = 5,
     retrieval_url: str = RETRIEVAL_URL,
     personalization_url: str = PERSONALIZATION_URL,
+    skip_health_check: bool = False,
 ) -> Dict:
-    queries, qrels_map = _load_queries_and_qrels(dataset_name)
-    query_items = [(qid, text) for qid, text in queries.items() if qrels_map.get(qid)]
+    if not skip_health_check:
+        _check_retrieval_health(retrieval_url)
+
+    queries, qrels_map, query_order = _load_queries_and_qrels(dataset_name)
+    query_items = select_eval_queries(
+        queries, qrels_map, max_queries, query_order=query_order
+    )
     buckets = _bucket_queries(query_items)
 
     report = {
         "dataset_name": dataset_name,
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "top_k": top_k,
-        "max_queries_per_user": max_queries_per_user,
+        "max_queries": max_queries,
         "warmup_queries": warmup_queries,
         "synthetic_users": list(SYNTHETIC_USERS.keys()),
+        "eval_protocol": build_eval_protocol(
+            dataset_name=dataset_name,
+            num_judged_queries=len(query_items),
+            max_queries=max_queries,
+        ),
         "baseline": {"modes": {}},
         "personalized": {"modes": {}},
     }
@@ -230,13 +257,16 @@ def run_personalization_evaluation(
         if len(items) < warmup_queries + 1:
             continue
         warmup = items[:warmup_queries]
-        test = items[warmup_queries : warmup_queries + max_queries_per_user]
+        test = items[warmup_queries:]
         _warmup_user(user_id, warmup, qrels_map, personalization_url)
         for query_id, query_text in test:
             all_test_items.append((query_id, query_text, user_id))
 
     if not all_test_items:
-        raise ValueError("No test queries available for synthetic users.")
+        raise ValueError(
+            "No test queries available for synthetic users. "
+            "Try increasing --max-queries or lowering --warmup-queries."
+        )
 
     seen = set()
     deduped_test: List[Tuple[str, str, str]] = []
@@ -245,6 +275,8 @@ def run_personalization_evaluation(
             continue
         seen.add(query_id)
         deduped_test.append((query_id, query_text, user_id))
+
+    report["eval_protocol"]["num_test_queries"] = len(deduped_test)
 
     for mode in modes:
         report["baseline"]["modes"][mode] = _evaluate_mode_baseline(
@@ -262,6 +294,8 @@ def run_personalization_evaluation(
             retrieval_url=retrieval_url,
             personalization_url=personalization_url,
         )
+
+    _assert_nonzero_baseline(report, modes)
 
     report["deltas_personalized_vs_baseline"] = {}
     for mode in modes:
@@ -286,6 +320,7 @@ def main() -> None:
     parser.add_argument("--output-dir", default=str(ROOT / "evaluation_results"))
     parser.add_argument("--retrieval-url", default=RETRIEVAL_URL)
     parser.add_argument("--personalization-url", default=PERSONALIZATION_URL)
+    parser.add_argument("--skip-health-check", action="store_true")
     args = parser.parse_args()
 
     modes = [m.strip() for m in args.modes.split(",") if m.strip()]
@@ -300,10 +335,11 @@ def main() -> None:
         dataset_name=args.dataset,
         modes=modes,
         top_k=args.top_k,
-        max_queries_per_user=args.max_queries,
+        max_queries=args.max_queries,
         warmup_queries=args.warmup_queries,
         retrieval_url=args.retrieval_url,
         personalization_url=args.personalization_url,
+        skip_health_check=args.skip_health_check,
     )
     report["scale"] = args.scale
 
@@ -320,6 +356,7 @@ def main() -> None:
         "scale": args.scale,
         "modes": report["baseline"]["modes"],
         "top_k": report["top_k"],
+        "eval_protocol": report["eval_protocol"],
     }
     personalized_report = {
         "dataset_name": report["dataset_name"],
@@ -328,17 +365,19 @@ def main() -> None:
         "modes": report["personalized"]["modes"],
         "top_k": report["top_k"],
         "warmup_queries": report["warmup_queries"],
+        "eval_protocol": report["eval_protocol"],
     }
     summary = {
         "scale": args.scale,
         "timestamp": report["timestamp"],
         "dataset_name": report["dataset_name"],
+        "eval_protocol": report["eval_protocol"],
         "deltas_personalized_vs_baseline": report["deltas_personalized_vs_baseline"],
         "baseline": baseline_report,
         "personalized": personalized_report,
         "limitations": [
             "Simulated oracle clicks on qrels-relevant docs (upper bound).",
-            "Test set is union of health/tech bucket queries after per-user warmup.",
+            "Queries assigned to sim_health / sim_tech / sim_general by keyword bucket.",
         ],
     }
 

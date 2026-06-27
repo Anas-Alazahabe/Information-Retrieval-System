@@ -17,8 +17,8 @@ _ROOT = Path(__file__).resolve().parents[2]
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
+from evaluation_service.app.eval_queries import build_eval_protocol, load_queries_and_qrels, select_eval_queries
 from evaluation_service.app.metrics import aggregate_metrics, evaluate_ranked_list
-from shared.ir_datasets_patch import patch_ir_datasets_tsv_utf8
 from shared.ir_config import EVAL_DATASET_NAME, REFINEMENT_URL, RETRIEVAL_URL, VALID_REPRESENTATION_MODES
 from shared.search_pipeline import search_with_optional_refinement
 
@@ -90,17 +90,7 @@ def _fetch_search_payload(
 
 
 def _load_queries_and_qrels(dataset_name: str):
-    """تحميل الاستعلامات وqrels من ir_datasets."""
-    os.environ.setdefault("PYTHONUTF8", "1")
-    patch_ir_datasets_tsv_utf8()
-    import ir_datasets
-
-    dataset = ir_datasets.load(dataset_name)
-    queries = {q.query_id: q.text for q in dataset.queries_iter()}
-    qrels_map: Dict[str, Dict[str, int]] = {}
-    for qrel in dataset.qrels_iter():
-        qrels_map.setdefault(qrel.query_id, {})[qrel.doc_id] = qrel.relevance
-    return queries, qrels_map
+    return load_queries_and_qrels(dataset_name)
 
 
 def run_evaluation(
@@ -117,13 +107,13 @@ def run_evaluation(
     representation_modes = representation_modes or list(VALID_REPRESENTATION_MODES)
     refinement_techniques = refinement_techniques or list(DEFAULT_REFINEMENT_TECHNIQUES)
 
-    queries, qrels_map = _load_queries_and_qrels(dataset_name)
-    query_items = list(queries.items())
-    if max_queries is not None:
-        query_items = query_items[:max_queries]
+    queries, qrels_map, query_order = _load_queries_and_qrels(dataset_name)
+    query_items = select_eval_queries(
+        queries, qrels_map, max_queries, query_order=query_order
+    )
 
     if not query_items:
-        raise ValueError(f"No queries found for dataset {dataset_name}")
+        raise ValueError(f"No judged queries found for dataset {dataset_name}")
 
     report = {
         "dataset_name": dataset_name,
@@ -132,6 +122,11 @@ def run_evaluation(
         "max_queries": max_queries,
         "use_refinement": use_refinement,
         "refinement_techniques": refinement_techniques if use_refinement else [],
+        "eval_protocol": build_eval_protocol(
+            dataset_name=dataset_name,
+            num_judged_queries=len(query_items),
+            max_queries=max_queries,
+        ),
         "modes": {},
     }
 
@@ -142,9 +137,7 @@ def run_evaluation(
         per_query = []
         matcher_meta = None
         for query_id, query_text in query_items:
-            qrels = qrels_map.get(query_id, {})
-            if not qrels:
-                continue
+            qrels = qrels_map[query_id]
 
             try:
                 payload = _fetch_search_payload(
